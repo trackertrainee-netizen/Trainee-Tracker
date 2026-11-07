@@ -6,10 +6,13 @@ Open: http://localhost:5000
 """
 import json
 import os
+import subprocess
 import tempfile
 import threading
 
 from flask import Flask, jsonify, request
+
+from CLOUD_FLARE.modules import upload_video_as_hls
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE, "data.json")
@@ -53,6 +56,35 @@ def put_trainees():
     with lock:
         write_data(data)
     return jsonify(ok=True, count=len(data))
+
+
+@app.post("/api/videos")
+def upload_video():
+    video = request.files.get("video")
+    folder_name = request.form.get("folder_name", "").strip().replace("\\", "/").strip("/")
+    if video is None or not video.filename:
+        return jsonify(error="Select a video to upload"), 400
+    if not folder_name or any(part in ("", ".", "..") for part in folder_name.split("/")):
+        return jsonify(error="Enter a valid destination folder name"), 400
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="trainee_tracker_upload_") as upload_dir:
+            video_path = os.path.join(upload_dir, "input_video")
+            video.save(video_path)
+            upload_video_as_hls(video_path, folder_name)
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    except RuntimeError as exc:
+        app.logger.error("Video upload configuration error: %s", exc)
+        return jsonify(error=str(exc)), 503
+    except FileNotFoundError as exc:
+        app.logger.error("Required video upload program is unavailable: %s", exc.filename)
+        return jsonify(error=f"Required program {exc.filename or 'ffmpeg or rclone'} is not available on the server"), 503
+    except subprocess.CalledProcessError:
+        app.logger.exception("Video conversion or upload failed")
+        return jsonify(error="Video conversion or upload failed. Check the server logs."), 502
+
+    return jsonify(ok=True, folder=folder_name, playlist=f"{folder_name}/index.m3u8")
 
 
 if __name__ == "__main__":

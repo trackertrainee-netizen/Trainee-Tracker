@@ -64,6 +64,7 @@ button.dgr{color:var(--dgr)}button.dgr:hover{border-color:var(--dgr)}
 .fg{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}
 .fg label,.fl{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--mu)}
 .fg input,.fg select,.fl input{width:100%;font-weight:500;color:var(--tx)}.fl{margin-top:12px}
+.upload-status{min-height:1.5em;margin-top:12px}
 
 /* ---- Current step + module navigation (navy panels with a gold edge) */
 .cur{background:linear-gradient(155deg,var(--ink),var(--navy));color:#fff;border:1px solid rgba(255,255,255,.08);box-shadow:inset 4px 0 0 var(--pn),var(--sh)}

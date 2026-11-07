@@ -93,7 +93,11 @@ function modTable(stats,t){
  return `<h2 style="margin-top:22px">Module-wise summary</h2><div class="sc"><table><tr><th>Module</th><th>Total task time</th><th>Total time taken</th><th>Verified</th><th>Score (out of ${MAXSC})</th><th>Remark</th></tr>${rows}<tr><td><b>All modules</b></td><td><b>${hm(stats.total)}</b></td><td><b>${hm(stats.taken)}</b></td><td>${stats.verifiedCount}/${stats.steps}</td><td><b id="tot-sc-row">${scoreText(t)}</b></td><td></td></tr></table></div><div class="mu">Fixed time comes from the task sheet. Time taken counts only completed steps, from Start to Mark completed. Score and remark can be added once every step of a module is verified.</div>`;
 }
 // ---- Pop-up window asking for the module score and remark
+function uploadModal(){
+ return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="upload-title"><div class="bd" data-a="uploadcancel"></div><div class="mb wide"><h2 id="upload-title">Upload video</h2><div class="mu">The server converts the video to HLS and uploads the playlist and segments.</div><form id="video-upload-form"><label class="fl">Video file<input id="video-file" name="video" type="file" accept="video/*" required></label><label class="fl">Custom destination folder<input id="video-folder" name="folder_name" type="text" placeholder="e.g. marketing-intro" required></label><div id="video-upload-status" class="mu upload-status" role="status" aria-live="polite"></div><div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="uploadcancel">Cancel</button><button class="p" type="submit" id="video-upload-submit">Convert and upload</button></div></form></div></div>`;
+}
 function modal(t){
+ if(S.upload)return uploadModal();
  if(S.add)return addModal();
  if(!t)return"";
  if(S.edit)return `<div class="ov" role="dialog" aria-modal="true"><div class="bd" data-a="mcancel"></div><div class="mb"><h2 style="margin-top:2px">Edit trainee name</h2><label class="fl">Trainee name<input id="en-nm" type="text" value="${esc(t.name)}" placeholder="Full name"></label><div class="row" style="margin-top:16px;justify-content:flex-end"><button data-a="mcancel">Cancel</button><button class="p" data-a="esave">Save</button></div></div></div>`;
@@ -117,7 +121,7 @@ const VID=ST.filter(x=>x.t==="VIDEO"),VT=VID.reduce((a,x)=>a+x.min,0),AT=ST.redu
 const mv=mi=>ST.filter(x=>x.m===mi&&x.t==="VIDEO").reduce((a,x)=>a+x.min,0);
 
 // ---- State
-let S={t:[],sel:null};
+let S={t:[],sel:null,upload:false};
 // Data is stored on the Python server (data.json) through /api/trainees
 const load=()=>fetch("/api/trainees").then(r=>r.json()).then(d=>{S.t=d}).catch(()=>alert("Cannot reach the server. Is app.py running?"));
 const save=()=>fetch("/api/trainees",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(S.t)}).catch(()=>alert("Could not save. Is app.py running?"));
@@ -152,11 +156,11 @@ function side(t){
  const foot=`<div class="sf"><span class="mu">Theme</span>${tbtn()}</div>`;
  if(!t)return `<aside class="sb">${brand}
   <label class="fl sq"><span>Search</span><input id="q" type="search" value="${esc(S.q||"")}" placeholder="Name, department, designation…" autocomplete="off"></label>
-  <button class="p" data-a="addopen">＋ Add trainee</button><button data-a="csv">Export CSV</button>
+  <button class="p" data-a="addopen">＋ Add trainee</button><button data-a="uploadopen">↑ Upload video</button><button data-a="csv">Export CSV</button>
   <div class="sg"></div>
   <div class="sd"><span class="mu">Training duration</span><b>${hm(AT)}</b><span class="mu">${ST.length} steps · ${hm(VT)} of video (${VID.length} videos)</span></div>${foot}</aside>`;
  return `<aside class="sb">${brand}
-  <button data-a="back">← All trainees</button><button data-a="ename">✎ Edit name</button><button class="dgr" data-a="del" data-id="${t.id}">Remove trainee</button>
+  <button data-a="back">← All trainees</button><button data-a="uploadopen">↑ Upload video</button><button data-a="ename">✎ Edit name</button><button class="dgr" data-a="del" data-id="${t.id}">Remove trainee</button>
   <div class="sg"></div>
   <div class="sd"><span class="mu">Viewing</span><b>${esc(t.name)}</b></div>${foot}</aside>`;
 }
@@ -222,6 +226,8 @@ document.addEventListener("click",e=>{
  else if(a==="next"){const[v,m]=vmod(t);if(v<m)S.vm=v+1;else if(waiting(t)!=null&&ST[waiting(t)].m===v+1){const d=now();t.logs.push({s:waiting(t),a:d,st:d});S.vm=null}}
  else if(a==="score"){S.modal=+b.dataset.mi}
  else if(a==="addopen"){S.add=true}
+ else if(a==="uploadopen"){S.add=false;S.edit=false;S.modal=null;S.upload=true}
+ else if(a==="uploadcancel"){S.upload=false}
  else if(a==="mcancel"){S.modal=null;S.edit=false;S.add=false}
  else if(a==="ename"){S.edit=true}
  else if(a==="esave"){const el=document.getElementById("en-nm"),n=el.value.trim();if(!n)return el.focus();t.name=n;S.edit=false}
@@ -232,6 +238,28 @@ document.addEventListener("click",e=>{
  save();render();
 });
 
+async function uploadVideo(){
+ const form=document.getElementById("video-upload-form"),status=document.getElementById("video-upload-status"),submit=document.getElementById("video-upload-submit");
+ if(!form.reportValidity())return;
+ submit.disabled=true;
+ status.textContent="Converting and uploading… This may take a while; keep this page open.";
+ try{
+  const response=await fetch("/api/videos",{method:"POST",body:new FormData(form)});
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(result.error||"Video upload failed.");
+  status.textContent=`Upload complete. Playlist: ${result.playlist}`;
+ }catch(error){
+  status.textContent=`Upload failed: ${error instanceof Error?error.message:String(error)}`;
+ }finally{
+  if(submit.isConnected)submit.disabled=false;
+ }
+}
+document.addEventListener("submit",e=>{
+ if(e.target.id!=="video-upload-form")return;
+ e.preventDefault();
+ uploadVideo();
+});
+
 function csv(){
  const r=[["Trainee","Branch","Department","Designation","Joining date","Salary","Wage","Step","Module","Type","Task","Monitored by","Assigned","Completed","Verified by","Verified at"]];
  S.t.forEach(t=>t.logs.forEach(g=>{const x=ST[g.s];r.push([t.name,t.branch||"",t.dept,t.desg||"",t.join||"",t.sal||"",t.wage||"",g.s+1,MODS[x.m].n,x.t,x.n,x.by,g.st||"",g.c||"",g.v||"",g.vt||""])}));
@@ -239,7 +267,7 @@ function csv(){
  const u=URL.createObjectURL(new Blob([s],{type:"text/csv"})),a=document.createElement("a");a.href=u;a.download="trainee-log.csv";a.click();
 }
 document.addEventListener("keydown",e=>{
- if(e.key==="Escape"&&(S.modal!=null||S.edit||S.add)){S.modal=null;S.edit=false;S.add=false;render()}
+ if(e.key==="Escape"&&(S.modal!=null||S.edit||S.add||S.upload)){S.modal=null;S.edit=false;S.add=false;S.upload=false;render()}
  else if(e.key==="Enter"&&S.add&&e.target.tagName==="INPUT"){const b=document.querySelector('[data-a="add"]');if(b)b.click()}
  else if(e.key==="Enter"&&e.target.id==="en-nm"){const b=document.querySelector('[data-a="esave"]');if(b)b.click()}
 });
