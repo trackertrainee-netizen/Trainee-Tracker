@@ -242,13 +242,23 @@ async function uploadVideo(){
  const form=document.getElementById("video-upload-form"),status=document.getElementById("video-upload-status"),submit=document.getElementById("video-upload-submit");
  if(!form.reportValidity())return;
  submit.disabled=true;
+ status.classList.remove("upload-status--success");
  status.textContent="Converting and uploading… This may take a while; keep this page open.";
  try{
   const response=await fetch("/api/videos",{method:"POST",body:new FormData(form)});
   const result=await response.json().catch(()=>({}));
   if(!response.ok)throw new Error(result.error||"Video upload failed.");
-  status.textContent=`Upload complete. Playlist: ${result.playlist}`;
+  status.classList.add("upload-status--success");
+  status.replaceChildren();
+  const icon=document.createElement("span");
+  icon.className="upload-complete-icon";
+  icon.setAttribute("aria-hidden","true");
+  icon.textContent="✓";
+  const message=document.createElement("span");
+  message.textContent=`Upload complete. Playlist: ${result.playlist}`;
+  status.append(icon,message);
  }catch(error){
+  status.classList.remove("upload-status--success");
   status.textContent=`Upload failed: ${error instanceof Error?error.message:String(error)}`;
  }finally{
   if(submit.isConnected)submit.disabled=false;

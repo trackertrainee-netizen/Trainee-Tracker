@@ -1,8 +1,10 @@
-from dotenv import load_dotenv
+import json
 import os
 import subprocess
 import tempfile
+
 import boto3
+from dotenv import load_dotenv
 
 load_dotenv()
 
@@ -73,6 +75,30 @@ def upload_file_to_s3(file_path, s3_key):
     )
 
 
+def _can_copy_to_hls(file_path):
+    probe = subprocess.run(
+        [
+            "ffprobe", "-v", "error",
+            "-show_entries", "stream=codec_type,codec_name,pix_fmt", "-of", "json",
+            os.fspath(file_path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    streams = json.loads(probe.stdout).get("streams", [])
+    video = next((stream for stream in streams if stream.get("codec_type") == "video"), None)
+    if video is None:
+        return False
+
+    audio = next((stream for stream in streams if stream.get("codec_type") == "audio"), None)
+    return (
+        video.get("codec_name") == "h264"
+        and video.get("pix_fmt") in ("yuv420p", "yuvj420p")
+        and (audio is None or audio.get("codec_name") == "aac")
+    )
+
+
 def upload_video_as_hls(file_path, folder_name):
     """Transcode a video to HLS and upload its playlist and segments to a custom folder."""
     folder_name = os.fspath(folder_name).replace("\\", "/").strip("/")
@@ -83,11 +109,17 @@ def upload_video_as_hls(file_path, folder_name):
     with tempfile.TemporaryDirectory(prefix="trainee_tracker_hls_") as hls_dir:
         playlist_path = os.path.join(hls_dir, "index.m3u8")
         segment_pattern = os.path.join(hls_dir, "segment_%03d.ts")
+        can_copy = _can_copy_to_hls(file_path)
+        codec_args = (
+            ["-c:v", "copy", "-c:a", "copy"]
+            if can_copy
+            else ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-c:a", "aac"]
+        )
         subprocess.run(
             [
-                "ffmpeg", "-y", "-i", os.fspath(file_path),
+                "ffmpeg", "-y", "-nostdin", "-i", os.fspath(file_path),
                 "-map", "0:v:0", "-map", "0:a:0?",
-                "-c:v", "libx264", "-c:a", "aac",
+                *codec_args,
                 "-hls_time", "6", "-hls_playlist_type", "vod",
                 "-hls_flags", "independent_segments",
                 "-hls_segment_filename", segment_pattern,
