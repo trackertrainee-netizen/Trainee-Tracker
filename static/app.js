@@ -181,6 +181,7 @@ function side(t){
 // ---- Trainee cards, filtered by the search box (name, department, designation, branch)
 function tcards(){
  const q=(S.q||"").trim().toLowerCase();
+ if(S.biz==="All"&&!q)return "";
  const L=vis().filter(t=>[t.name,t.dept,t.desg,t.branch,bizOf(t)].some(v=>String(v||"").toLowerCase().includes(q)));
  return L.length?'<div class="gl">'+L.map(t=>{const[s,c]=status(t),l=cur(t),n=done(t);return `<div class="card item" data-a="open" data-id="${t.id}">
  <div class="sp"><b>${esc(t.name)}</b><span class="chip ${c}">${s}</span></div>
@@ -188,13 +189,18 @@ function tcards(){
  ${seg(t)}
  <div class="mu">${n}/${ST.length} verified${l?` · Now: Step ${l.s+1} – ${esc(ST[l.s].n)}`:""}</div></div>`}).join("")+'</div>':'<div class="mu">'+(S.t.length?"No trainees match the current filters.":"No trainees yet. Use “Add trainee” in the sidebar.")+'</div>';
 }
+const cnts=L=>{const n=L.length,aw=L.filter(t=>{const l=cur(t);return l&&l.c}).length,dn=L.filter(t=>status(t)[0]==="Completed").length;return{n,aw,dn,ip:n-aw-dn}};
+// Home (Business = All): overall overview on top, one card per business below.
+// Business page: that business's overview tiles and trainees (Hierarchy is the other View).
 function list(){
  if(S.sub==="Hierarchy")return hierPage();
- const V=vis(),n=V.length,aw=V.filter(t=>{const l=cur(t);return l&&l.c}).length,dn=V.filter(t=>status(t)[0]==="Completed").length,ip=n-aw-dn;
+ const all=S.biz==="All",c=cnts(vis());
  const st=(l,v,sub)=>`<div class="tl"><span class="mu">${l}</span><b>${v}</b><span class="mu">${sub}</span></div>`;
- return `<div class="ph"><h1>Trainees</h1><div class="mu">Follow every trainee through ${MODS.length} modules and ${ST.length} tasks, one verified step at a time.</div></div>
- ${slicers()}<div class="tg">${st("Total trainees",n,"enrolled")}${st("In progress",ip,"working through steps")}${st("Awaiting verification",aw,"needs a verifier")}${st("Completed",dn,"all steps verified")}</div>
- <div id="tl">${tcards()}</div>`;
+ const tiles=`<div class="tg">${st("Total trainees",c.n,"enrolled")}${st("In progress",c.ip,"working through steps")}${st("Awaiting verification",c.aw,"needs a verifier")}${st("Completed",c.dn,"all steps verified")}</div>`;
+ const head=all?`<div class="ph"><h1>Trainees</h1><div class="mu">Overall overview across all businesses. Open a business below to see its trainees and hierarchy.</div></div>`
+  :`<div class="ph"><button class="gh sm" data-a="bizopen" data-v="All">← All businesses</button><h1 style="margin-top:0.5rem">${esc(S.biz)}</h1><div class="mu">Follow every ${esc(S.biz)} trainee through ${MODS.length} modules and ${ST.length} tasks, one verified step at a time.</div></div>`;
+ const cards=all?`<h2 style="margin-top:0.5rem">Businesses</h2><div class="bg">${BUSINESSES.map(b=>{const x=cnts(S.t.filter(t=>bizOf(t)===b));return `<div class="card item bz" data-a="bizopen" data-v="${esc(b)}"><div class="sp"><b>${esc(b)}</b><span class="mu">Open ›</span></div><div class="bn">${x.n}</div><div class="mu">trainee${x.n===1?"":"s"}</div><div class="bm"><span>${x.ip} in progress</span><span>${x.aw} awaiting</span><span>${x.dn} completed</span></div></div>`}).join("")}</div>`:"";
+ return `${head}${slicers()}${tiles}${cards}<div id="tl">${tcards()}</div>`;
 }
 // ---- Add trainee pop-up form
 function addModal(){
@@ -224,17 +230,15 @@ const nav=`<div class="navbar"><button class="gh" data-a="prev" ${vm<=0?"disable
  ${act}${tiles(t)}<div class="card"><h2>Workflow log</h2><div class="sc"><table><tr><th>#</th><th>Type</th><th>Task</th><th>Planned</th><th>Monitor</th><th>Assigned</th><th>Completed</th><th>Verified by</th><th>Time taken</th><th>Status</th></tr>${rows}</table></div>${nav}</div>`;
 }
 
-// ---- Slicers (dropdowns): Business, and View = Overview (that business's trainees) / Hierarchy (uploaded image)
+// ---- View dropdown: Overview (trainees) / Hierarchy (uploaded image). The business is chosen from the business cards.
 function slicers(){
- const cnt=b=>b==="All"?S.t.length:S.t.filter(t=>bizOf(t)===b).length,hv=S.sub==="Hierarchy";
- const biz=["All",...BUSINESSES].map(b=>`<option value="${esc(b)}"${S.biz===b?" selected":""}>${esc(b)}${hv?"":" ("+cnt(b)+")"}</option>`).join("");
  const sub=SUBVIEWS.map(v=>`<option value="${esc(v)}"${S.sub===v?" selected":""}>${esc(v)}</option>`).join("");
- return `<div class="slc"><label class="sl"><span class="mu">Business</span><select id="biz-sel">${biz}</select></label><label class="sl"><span class="mu">View</span><select id="sub-sel">${sub}</select></label></div>`;
+ return `<div class="slc"><label class="sl"><span class="mu">View</span><select id="sub-sel">${sub}</select></label></div>`;
 }
 // Hierarchy view: one uploaded image per business (stored on the server)
 function hierPage(){
  const L=S.biz==="All"?BUSINESSES:[S.biz];
- return `<div class="ph"><h1>Business hierarchy</h1><div class="mu">Upload the hierarchy image of each business (PNG, JPG, WEBP or GIF, up to 10 MB).</div></div>${slicers()}`
+ return `<div class="ph">${S.biz==="All"?"":`<button class="gh sm" data-a="bizopen" data-v="All">← All businesses</button>`}<h1${S.biz==="All"?"":` style="margin-top:0.5rem"`}>${S.biz==="All"?"Business hierarchy":esc(S.biz)+" hierarchy"}</h1><div class="mu">Upload the hierarchy image of each business (PNG, JPG, WEBP or GIF, up to 10 MB).</div></div>${slicers()}`
   +L.map(b=>{const h=S.hier[b];return `<div class="card hcard"><div class="sp"><h2>${esc(b)} hierarchy</h2><div class="row"><label class="upl">${h?"Replace image":"Upload image"}<input type="file" class="hfile" data-biz="${esc(b)}" accept="image/png,image/jpeg,image/webp,image/gif" hidden></label>${h?`<button class="sm dgr" data-a="hierdel" data-v="${esc(b)}">Remove</button>`:""}</div></div>`
    +(h?`<img class="himg" src="/api/hierarchy/image/${encodeURIComponent(b)}?v=${h.v}" alt="${esc(b)} hierarchy">`:`<div class="mu">No hierarchy image uploaded for ${esc(b)} yet.</div>`)+`</div>`}).join("");
 }
@@ -311,6 +315,7 @@ document.addEventListener("click",e=>{
  else if(a==="esave"){const el=document.getElementById("en-nm"),n=el.value.trim();if(!n)return el.focus();t.name=n;t.biz=document.getElementById("en-bz").value;S.edit=false}
  else if(a==="msave"){const el=document.getElementById("ms-sc"),n=+el.value;if(el.value.trim()===""||!Number.isFinite(n))return el.focus();
   t.scores=t.scores||{};t.scores[S.modal]={sc:Math.max(0,Math.min(MAXSC,n)),rm:document.getElementById("ms-rm").value.trim()};S.modal=null}
+ else if(a==="bizopen"){S.biz=b.dataset.v;S.sub="Overview";return render()}
  else if(a==="hierdel"){const bz=b.dataset.v;if(!confirm("Remove the hierarchy image for "+bz+"?"))return;fetch("/api/hierarchy/"+encodeURIComponent(bz),{method:"DELETE"}).then(r=>{if(!r.ok)throw new Error("x");delete S.hier[bz];render()}).catch(()=>alert("Could not remove the image."));return}
  else if(a==="mapopen"){S.add=false;S.edit=false;S.modal=null;S.upload=false;S.video=false;const bz=t?bizOf(t):(S.biz!=="All"?S.biz:BUSINESSES[0]),si=firstStep(0);S.mp={biz:bz,mi:0,si,folder:mapped(bz,si),msg:""}}
  else if(a==="mapclose"){S.mp=null}

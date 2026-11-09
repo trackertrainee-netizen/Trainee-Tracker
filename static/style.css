@@ -261,3 +261,8 @@ button.pill.on{background:var(--gold);color:var(--on-gold);border-color:var(--go
 .hcard .row{align-items:center}
 label.upl{display:inline-block;padding:0.25rem 0.75rem;font-size:0.75rem;font-weight:600;border-radius:6.1875rem;border:1px solid var(--bd2);background:var(--card);color:var(--tx);cursor:pointer}
 label.upl:hover{border-color:var(--gold)}
+/* ---- Business cards on the home page */
+.bg{display:grid;grid-template-columns:repeat(auto-fit,minmax(13rem,1fr));gap:0.875rem;margin-bottom:1rem}
+.bg .card{margin:0}
+.bz .bn{font:500 2.25rem/1.1 var(--serif);margin-top:0.5rem}
+.bz .bm{display:flex;flex-wrap:wrap;gap:0.125rem 0.75rem;margin-top:0.625rem;font-size:0.75rem;color:var(--mu)}
