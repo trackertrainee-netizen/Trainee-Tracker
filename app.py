@@ -26,7 +26,7 @@ from CLOUD_FLARE.modules import (
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE, "data.json")
-UPLOAD_CHUNK_SIZE = 200 * 1024 * 1024
+UPLOAD_CHUNK_SIZE = 50 * 1024 * 1024
 UPLOAD_CHUNK_DIR = os.path.join(tempfile.gettempdir(), "trainee_tracker_upload_chunks")
 lock = threading.Lock()
 video_jobs = {}
@@ -304,7 +304,7 @@ def start_video_upload():
 @app.post("/api/video-uploads/<upload_id>/<int:chunk_index>")
 def upload_video_chunk(upload_id, chunk_index):
     if request.content_length and request.content_length > UPLOAD_CHUNK_SIZE + 1024 * 1024:
-        return jsonify(error="Upload chunk exceeds the 200 MB limit."), 413
+        return jsonify(error="Upload chunk exceeds the 50 MB limit."), 413
 
     session_dir, metadata = _read_upload_session(upload_id)
     if session_dir is None:
@@ -350,6 +350,7 @@ def complete_video_upload(upload_id):
         return jsonify(error="Video upload session is invalid."), 400
 
     folder_name = f"{metadata['parent_folder']}/{metadata['video_folder']}"
+    upload_dir = None
     try:
         for chunk_index in range(metadata["total_chunks"]):
             chunk_path = os.path.join(session_dir, f"chunk_{chunk_index:06d}")
@@ -364,16 +365,32 @@ def complete_video_upload(upload_id):
         if folder_name in get_video_folders():
             return jsonify(error="A video folder with that name already exists under this parent."), 409
 
-        with tempfile.TemporaryDirectory(prefix="trainee_tracker_upload_") as upload_dir:
-            video_path = os.path.join(upload_dir, "input_video")
-            with open(video_path, "wb") as assembled:
-                for chunk_index in range(metadata["total_chunks"]):
-                    chunk_path = os.path.join(session_dir, f"chunk_{chunk_index:06d}")
-                    with open(chunk_path, "rb") as part:
-                        shutil.copyfileobj(part, assembled, length=1024 * 1024)
-            if os.path.getsize(video_path) != metadata["file_size"]:
-                return jsonify(error="Uploaded video size does not match the selected file."), 400
-            upload_video_as_hls(video_path, folder_name)
+        upload_dir = tempfile.mkdtemp(prefix="trainee_tracker_upload_")
+        video_path = os.path.join(upload_dir, "input_video")
+        with open(video_path, "wb") as assembled:
+            for chunk_index in range(metadata["total_chunks"]):
+                chunk_path = os.path.join(session_dir, f"chunk_{chunk_index:06d}")
+                with open(chunk_path, "rb") as part:
+                    shutil.copyfileobj(part, assembled, length=1024 * 1024)
+        if os.path.getsize(video_path) != metadata["file_size"]:
+            return jsonify(error="Uploaded video size does not match the selected file."), 400
+
+        _prune_video_jobs()
+        job_id = str(uuid.uuid4())
+        with video_jobs_lock:
+            video_jobs[job_id] = {
+                "status": "converting",
+                "percent": 0,
+                "playlist": None,
+                "error": None,
+                "updated": time.time(),
+            }
+        threading.Thread(
+            target=_run_video_job,
+            args=(job_id, upload_dir, video_path, folder_name),
+            daemon=True,
+        ).start()
+        upload_dir = None
     except ValueError as exc:
         return jsonify(error=str(exc)), 400
     except RuntimeError as exc:
@@ -389,8 +406,12 @@ def complete_video_upload(upload_id):
         app.logger.exception("Video conversion or upload failed")
         return jsonify(error="Video conversion or upload failed. Check the server logs."), 502
 
-    shutil.rmtree(session_dir)
-    return jsonify(ok=True, folder=folder_name, playlist=f"{folder_name}/index.m3u8")
+    finally:
+        if upload_dir:
+            shutil.rmtree(upload_dir, ignore_errors=True)
+
+    shutil.rmtree(session_dir, ignore_errors=True)
+    return jsonify(job_id=job_id), 202
 
 
 @app.delete("/api/video-uploads/<upload_id>")

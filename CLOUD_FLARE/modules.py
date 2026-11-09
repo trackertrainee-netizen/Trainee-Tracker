@@ -119,11 +119,11 @@ def _rclone_env():
     return env
 
 
-def upload_file_to_s3(file_path, s3_key):
+def upload_file_to_s3(file_path, s3_key, env=None):
     """Upload a file to the configured Cloudflare R2 bucket with rclone."""
     subprocess.run(
         ["rclone", "copyto", os.fspath(file_path), f"r2:{BUCKET_NAME}/{s3_key}"],
-        env=_rclone_env(),
+        env=env or _rclone_env(),
         check=True,
     )
 
@@ -189,31 +189,6 @@ def _run_ffmpeg_hls(cmd, duration, on_percent):
     on_percent(100)
 
 
-def _run_rclone_copy(source_dir, destination, env, on_percent):
-    """Run rclone copy and report 0-100 from its JSON stats log."""
-    proc = subprocess.Popen(
-        ["rclone", "copy", source_dir, destination,
-         "--use-json-log", "-v", "--stats", "500ms"],
-        env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
-    )
-    last = -1
-    for line in proc.stderr:
-        try:
-            stats = json.loads(line).get("stats")
-        except ValueError:
-            continue
-        if not stats or not stats.get("totalBytes"):
-            continue
-        percent = min(99, int(stats.get("bytes", 0) / stats["totalBytes"] * 100))
-        if percent != last:
-            last = percent
-            on_percent(percent)
-    code = proc.wait()
-    if code != 0:
-        raise subprocess.CalledProcessError(code, "rclone")
-    on_percent(100)
-
-
 def upload_video_as_hls(file_path, folder_name, progress=None):
     """Transcode a video to HLS and upload its playlist and segments to a custom folder.
 
@@ -251,9 +226,17 @@ def upload_video_as_hls(file_path, folder_name, progress=None):
             lambda percent: report("converting", percent),
         )
         report("uploading", 0)
-        _run_rclone_copy(
-            hls_dir,
-            f"r2:{BUCKET_NAME}/{folder_name}",
-            env,
-            lambda percent: report("uploading", percent),
+        segment_paths = sorted(
+            os.path.join(hls_dir, name)
+            for name in os.listdir(hls_dir)
+            if name.startswith("segment_") and name.endswith(".ts")
         )
+        upload_paths = segment_paths + [playlist_path]
+        total_bytes = sum(os.path.getsize(path) for path in upload_paths)
+        uploaded_bytes = 0
+        for path in upload_paths:
+            file_size = os.path.getsize(path)
+            upload_file_to_s3(path, f"{folder_name}/{os.path.basename(path)}", env)
+            os.remove(path)
+            uploaded_bytes += file_size
+            report("uploading", int(uploaded_bytes / total_bytes * 100))
