@@ -237,3 +237,27 @@ tr.lkd td{color:var(--lk)}
 .chip.wa{animation:pulse 2.6s ease-in-out infinite}
 html.tx *,html.tx *::before,html.tx *::after{transition:background-color .4s,color .4s,border-color .4s,box-shadow .4s!important}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+
+/* ---- Slicers (business + view) */
+.slc{display:flex;flex-wrap:wrap;gap:0.75rem 1.5rem;margin-bottom:1rem}
+.sl{display:flex;flex-direction:column;gap:0.3125rem}
+.pl{display:flex;flex-wrap:wrap;gap:0.4375rem}
+button.pill{padding:0.3125rem 0.875rem;font-size:0.8125rem;font-weight:600;border-radius:6.1875rem;cursor:pointer}
+button.pill .pc{opacity:.65;font-weight:500;margin-left:0.125rem}
+button.pill.on{background:var(--gold);color:var(--on-gold);border-color:var(--gold)}
+/* ---- Hierarchy view */
+.hr{display:flex;flex-direction:column;gap:1.25rem}
+.hbiz>.sp{margin-bottom:0.625rem}.hbiz h2{margin:0}
+.hbiz .hb{margin-left:0.875rem}
+.hd{margin-top:0.625rem}.hdt{font-weight:600;margin-bottom:0.25rem}
+.hrow{display:grid;grid-template-columns:minmax(8rem,1.4fr) minmax(6rem,1fr) auto auto;gap:0.75rem;align-items:center;padding:0.5rem 0.75rem;border-top:1px solid var(--bd);cursor:pointer;border-radius:0.5rem}
+.hrow:hover{background:var(--hi)}
+@media (max-width:640px){.hrow{grid-template-columns:1fr auto}}
+/* ---- Map videos / select fields */
+.fl select{width:100%;font-weight:500;color:var(--tx)}
+.video-player-status.vhide:not(.err){display:none}
+.sl select{min-width:11rem}
+.himg{display:block;max-width:100%;height:auto;margin-top:0.75rem;border-radius:0.75rem;border:1px solid var(--bd)}
+.hcard .row{align-items:center}
+label.upl{display:inline-block;padding:0.25rem 0.75rem;font-size:0.75rem;font-weight:600;border-radius:6.1875rem;border:1px solid var(--bd2);background:var(--card);color:var(--tx);cursor:pointer}
+label.upl:hover{border-color:var(--gold)}

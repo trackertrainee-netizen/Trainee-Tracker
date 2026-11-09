@@ -14,7 +14,7 @@ import time
 import uuid
 
 from botocore.exceptions import BotoCoreError, ClientError
-from flask import Flask, Response, jsonify, request
+from flask import Flask, Response, jsonify, request, send_from_directory
 
 from CLOUD_FLARE.modules import (
     create_parent_folder,
@@ -26,6 +26,10 @@ from CLOUD_FLARE.modules import (
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE, "data.json")
+VIDEO_MAP_FILE = os.path.join(BASE, "video_map.json")
+HIER_FILE = os.path.join(BASE, "hierarchy.json")
+HIER_DIR = os.path.join(BASE, "hierarchy_images")
+HIER_MAX_BYTES = 10 * 1024 * 1024
 UPLOAD_CHUNK_SIZE = 50 * 1024 * 1024
 UPLOAD_CHUNK_DIR = os.path.join(tempfile.gettempdir(), "trainee_tracker_upload_chunks")
 lock = threading.Lock()
@@ -506,6 +510,154 @@ def video_job_status(job_id):
         playlist=job["playlist"],
         error=job["error"],
     )
+
+
+def read_video_map():
+    try:
+        with open(VIDEO_MAP_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def write_video_map(data):
+    fd, tmp = tempfile.mkstemp(dir=BASE, suffix=".tmp")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, VIDEO_MAP_FILE)
+
+
+def _valid_video_map(data):
+    """{business: {task key: "parent/video-folder"}} with safe folder paths."""
+    if not isinstance(data, dict):
+        return False
+    for business, tasks in data.items():
+        if not isinstance(business, str) or not isinstance(tasks, dict):
+            return False
+        for key, folder in tasks.items():
+            if not isinstance(key, str) or not isinstance(folder, str) or not folder:
+                return False
+            if any(part in ("", ".", "..") for part in folder.split("/")) or "\\" in folder:
+                return False
+    return True
+
+
+@app.get("/api/video-map")
+def get_video_map():
+    with lock:
+        return jsonify(read_video_map())
+
+
+@app.put("/api/video-map")
+def put_video_map():
+    data = request.get_json(silent=True)
+    if not _valid_video_map(data):
+        return jsonify(error="Invalid video mapping."), 400
+    with lock:
+        write_video_map(data)
+    return jsonify(ok=True)
+
+
+def _image_ext(head):
+    """Detect the real image type from the file header (PNG, JPEG, GIF, WEBP only)."""
+    if head.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ".png"
+    if head[:3] == b"\xff\xd8\xff":
+        return ".jpg"
+    if head[:6] in (b"GIF87a", b"GIF89a"):
+        return ".gif"
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return ".webp"
+    return None
+
+
+def _valid_business(name):
+    return (
+        isinstance(name, str)
+        and 0 < len(name) <= 40
+        and name == name.strip()
+        and all(ch.isprintable() for ch in name)
+    )
+
+
+def read_hier():
+    try:
+        with open(HIER_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def write_hier(data):
+    fd, tmp = tempfile.mkstemp(dir=BASE, suffix=".tmp")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, HIER_FILE)
+
+
+@app.get("/api/hierarchy")
+def list_hierarchy():
+    with lock:
+        return jsonify({biz: {"v": entry.get("v", 0)} for biz, entry in read_hier().items()})
+
+
+@app.post("/api/hierarchy/<business>")
+def upload_hierarchy(business):
+    if not _valid_business(business):
+        return jsonify(error="Invalid business name."), 400
+    if request.content_length and request.content_length > HIER_MAX_BYTES + 1024 * 1024:
+        return jsonify(error="The image is larger than 10 MB."), 413
+    image = request.files.get("image")
+    if image is None or not image.filename:
+        return jsonify(error="Select an image to upload."), 400
+    data = image.read(HIER_MAX_BYTES + 1)
+    if len(data) > HIER_MAX_BYTES:
+        return jsonify(error="The image is larger than 10 MB."), 413
+    ext = _image_ext(data[:16])
+    if ext is None:
+        return jsonify(error="Upload a PNG, JPG, WEBP or GIF image."), 400
+
+    os.makedirs(HIER_DIR, exist_ok=True)
+    filename = uuid.uuid4().hex + ext
+    with open(os.path.join(HIER_DIR, filename), "wb") as f:
+        f.write(data)
+    with lock:
+        hier = read_hier()
+        old = hier.get(business, {}).get("file")
+        hier[business] = {"file": filename, "v": int(time.time())}
+        write_hier(hier)
+    if old and old != filename:
+        try:
+            os.remove(os.path.join(HIER_DIR, os.path.basename(old)))
+        except OSError:
+            pass
+    return jsonify(entry={"v": hier[business]["v"]}), 201
+
+
+@app.delete("/api/hierarchy/<business>")
+def delete_hierarchy(business):
+    with lock:
+        hier = read_hier()
+        entry = hier.pop(business, None)
+        if entry:
+            write_hier(hier)
+    if entry and entry.get("file"):
+        try:
+            os.remove(os.path.join(HIER_DIR, os.path.basename(entry["file"])))
+        except OSError:
+            pass
+    return jsonify(ok=True)
+
+
+@app.get("/api/hierarchy/image/<business>")
+def hierarchy_image(business):
+    with lock:
+        entry = read_hier().get(business)
+    if not entry or not entry.get("file"):
+        return jsonify(error="No hierarchy image for this business."), 404
+    return send_from_directory(HIER_DIR, os.path.basename(entry["file"]), max_age=3600)
 
 
 if __name__ == "__main__":
