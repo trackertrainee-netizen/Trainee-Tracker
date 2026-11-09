@@ -2,7 +2,7 @@ import os
 import subprocess
 
 
-def transcode_to_hls(file_path, out_dir, segment_seconds=1200):
+def transcode_to_hls(file_path, out_dir, segment_seconds=6):
     """Transcode a video to HLS into out_dir. Returns the playlist path."""
     file_path = os.fspath(file_path)
     if not os.path.isfile(file_path):

@@ -115,6 +115,7 @@ def _rclone_env():
         "RCLONE_CONFIG_R2_SECRET_ACCESS_KEY": SECRET_KEY,
         "RCLONE_CONFIG_R2_ENDPOINT": f"https://{ACCOUNT_ID}.r2.cloudflarestorage.com",
         "RCLONE_CONFIG_R2_REGION": "auto",
+        "RCLONE_CONFIG_R2_NO_CHECK_BUCKET": "true",
     })
     return env
 

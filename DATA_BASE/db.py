@@ -1,0 +1,16 @@
+
+
+class DataBase:
+    def __init__(self):
+        self
+
+    def connect(self):
+        ...
+    def add_buisness(self, business):
+        ...
+    def add_user(self, trainee):
+        ...
+    def add_dept(self, dept):
+        ...
+    def update_stage(self, trainee_id, stage):
+        ...
