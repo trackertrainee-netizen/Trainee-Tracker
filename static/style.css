@@ -68,6 +68,10 @@ button.dgr{color:var(--dgr)}button.dgr:hover{border-color:var(--dgr)}
 .upload-status--success{display:flex;align-items:center;gap:12px;color:var(--ok)}
 .upload-complete-icon{width:34px;height:34px;flex:none;display:grid;place-items:center;border-radius:50%;background:var(--ok);color:var(--card);font-size:20px;font-weight:700;animation:upload-complete .65s cubic-bezier(.2,.9,.3,1.3) both}
 @keyframes upload-complete{from{opacity:0;transform:scale(.3) rotate(-35deg)}65%{opacity:1;transform:scale(1.15) rotate(8deg)}to{transform:scale(1) rotate(0)}}
+.upload-progress{position:relative;height:8px;margin-top:12px;overflow:hidden;border-radius:999px;background:color-mix(in srgb,var(--ok) 14%,var(--bd))}
+.upload-progress[hidden]{display:none}
+.upload-progress__bar{position:absolute;inset:0 auto 0 -40%;width:40%;border-radius:inherit;background:var(--ok);animation:upload-progress 1.25s ease-in-out infinite}
+@keyframes upload-progress{to{left:100%}}
 
 /* ---- Current step + module navigation (navy panels with a gold edge) */
 .cur{background:linear-gradient(155deg,var(--ink),var(--navy));color:#fff;border:1px solid rgba(255,255,255,.08);box-shadow:inset 4px 0 0 var(--pn),var(--sh)}

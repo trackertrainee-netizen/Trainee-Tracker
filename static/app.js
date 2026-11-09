@@ -94,7 +94,7 @@ function modTable(stats,t){
 }
 // ---- Pop-up window asking for the module score and remark
 function uploadModal(){
- return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="upload-title"><div class="bd" data-a="uploadcancel"></div><div class="mb wide"><h2 id="upload-title">Upload video</h2><div class="mu">The server converts the video to HLS and uploads the playlist and segments.</div><form id="video-upload-form"><label class="fl">Video file<input id="video-file" name="video" type="file" accept="video/*" required></label><label class="fl">Custom destination folder<input id="video-folder" name="folder_name" type="text" placeholder="e.g. marketing-intro" required></label><div id="video-upload-status" class="mu upload-status" role="status" aria-live="polite"></div><div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="uploadcancel">Cancel</button><button class="p" type="submit" id="video-upload-submit">Convert and upload</button></div></form></div></div>`;
+ return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="upload-title"><div class="bd" data-a="uploadcancel"></div><div class="mb wide"><h2 id="upload-title">Upload video</h2><div class="mu">The server converts the video to HLS and uploads the playlist and segments.</div><form id="video-upload-form"><label class="fl">Video file<input id="video-file" name="video" type="file" accept="video/*" required></label><label class="fl">Custom destination folder<input id="video-folder" name="folder_name" type="text" placeholder="e.g. marketing-intro" required></label><div id="video-upload-status" class="mu upload-status" role="status" aria-live="polite"></div><div id="video-upload-progress" class="upload-progress" role="progressbar" aria-label="Video conversion and upload in progress" aria-valuetext="In progress" hidden><span class="upload-progress__bar"></span></div><div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="uploadcancel">Cancel</button><button class="p" type="submit" id="video-upload-submit">Convert and upload</button></div></form></div></div>`;
 }
 function modal(t){
  if(S.upload)return uploadModal();
@@ -239,9 +239,10 @@ document.addEventListener("click",e=>{
 });
 
 async function uploadVideo(){
- const form=document.getElementById("video-upload-form"),status=document.getElementById("video-upload-status"),submit=document.getElementById("video-upload-submit");
+ const form=document.getElementById("video-upload-form"),status=document.getElementById("video-upload-status"),progress=document.getElementById("video-upload-progress"),submit=document.getElementById("video-upload-submit");
  if(!form.reportValidity())return;
  submit.disabled=true;
+ progress.hidden=false;
  status.classList.remove("upload-status--success");
  status.textContent="Converting and uploading… This may take a while; keep this page open.";
  try{
@@ -261,6 +262,7 @@ async function uploadVideo(){
   status.classList.remove("upload-status--success");
   status.textContent=`Upload failed: ${error instanceof Error?error.message:String(error)}`;
  }finally{
+  progress.hidden=true;
   if(submit.isConnected)submit.disabled=false;
  }
 }
