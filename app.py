@@ -10,9 +10,10 @@ import subprocess
 import tempfile
 import threading
 
-from flask import Flask, jsonify, request
+from botocore.exceptions import BotoCoreError, ClientError
+from flask import Flask, Response, jsonify, request
 
-from CLOUD_FLARE.modules import upload_video_as_hls
+from CLOUD_FLARE.modules import get_video_folders, get_video_object, upload_video_as_hls
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE, "data.json")
@@ -56,6 +57,69 @@ def put_trainees():
     with lock:
         write_data(data)
     return jsonify(ok=True, count=len(data))
+
+
+@app.get("/api/videos")
+def list_video_folders():
+    try:
+        return jsonify(folders=get_video_folders())
+    except RuntimeError as exc:
+        app.logger.error("Video storage configuration error: %s", exc)
+        return jsonify(error=str(exc)), 503
+    except (BotoCoreError, ClientError):
+        app.logger.exception("Could not list video folders")
+        return jsonify(error="Could not load videos from storage."), 502
+
+
+@app.get("/api/videos/<path:object_key>")
+def stream_video_object(object_key):
+    parts = object_key.split("/")
+    if (
+        len(parts) < 2
+        or any(part in ("", ".", "..") for part in parts)
+        or not (
+            parts[-1] == "index.m3u8"
+            or (parts[-1].startswith("segment_") and parts[-1].endswith(".ts"))
+        )
+    ):
+        return jsonify(error="Invalid video path"), 400
+
+    try:
+        video_object = get_video_object(object_key)
+    except RuntimeError as exc:
+        app.logger.error("Video storage configuration error: %s", exc)
+        return jsonify(error=str(exc)), 503
+    except ClientError as exc:
+        error_code = exc.response.get("Error", {}).get("Code")
+        if error_code in ("NoSuchKey", "404", "NotFound"):
+            return jsonify(error="Video file not found"), 404
+        app.logger.exception("Could not retrieve video object")
+        return jsonify(error="Could not load video from storage."), 502
+    except BotoCoreError:
+        app.logger.exception("Could not retrieve video object")
+        return jsonify(error="Could not load video from storage."), 502
+
+    body = video_object["Body"]
+
+    def stream():
+        try:
+            while True:
+                chunk = body.read(64 * 1024)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            body.close()
+
+    headers = {"Cache-Control": "private, max-age=60"}
+    if "ContentLength" in video_object:
+        headers["Content-Length"] = str(video_object["ContentLength"])
+    mimetype = (
+        "application/vnd.apple.mpegurl"
+        if parts[-1] == "index.m3u8"
+        else "video/mp2t"
+    )
+    return Response(stream(), mimetype=mimetype, headers=headers)
 
 
 @app.post("/api/videos")

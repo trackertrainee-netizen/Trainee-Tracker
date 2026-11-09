@@ -50,6 +50,25 @@ def get_objects_path():
         print(f"Error getting object paths: {e}")
         return []
 
+
+def get_video_folders():
+    """Return folders that contain an HLS playlist."""
+    client = _get_s3_client()
+    paginator = client.get_paginator("list_objects_v2")
+    folders = set()
+    for page in paginator.paginate(Bucket=BUCKET_NAME):
+        for obj in page.get("Contents", []):
+            key = obj["Key"]
+            if key.endswith("/index.m3u8"):
+                folders.add(key[:-len("/index.m3u8")])
+    return sorted(folders)
+
+
+def get_video_object(object_key):
+    """Get one HLS playlist or segment from the configured bucket."""
+    return _get_s3_client().get_object(Bucket=BUCKET_NAME, Key=object_key)
+
+
 def _rclone_env():
     if not all((ACCESS_KEY, SECRET_KEY, BUCKET_NAME, ACCOUNT_ID)):
         raise RuntimeError("ACCESS_KEY, SECRET_KEY, BUCKET_NAME, and ACCOUNT_ID must be configured.")

@@ -96,8 +96,12 @@ function modTable(stats,t){
 function uploadModal(){
  return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="upload-title"><div class="bd" data-a="uploadcancel"></div><div class="mb wide"><h2 id="upload-title">Upload video</h2><div class="mu">The server converts the video to HLS and uploads the playlist and segments.</div><form id="video-upload-form"><label class="fl">Video file<input id="video-file" name="video" type="file" accept="video/*" required></label><label class="fl">Custom destination folder<input id="video-folder" name="folder_name" type="text" placeholder="e.g. marketing-intro" required></label><div id="video-upload-status" class="mu upload-status" role="status" aria-live="polite"></div><div id="video-upload-progress" class="upload-progress" role="progressbar" aria-label="Video conversion and upload in progress" aria-valuetext="In progress" hidden><span class="upload-progress__bar"></span></div><div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="uploadcancel">Cancel</button><button class="p" type="submit" id="video-upload-submit">Convert and upload</button></div></form></div></div>`;
 }
+function videoModal(){
+ return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="video-title"><div class="bd" data-a="videocancel"></div><div class="mb wide"><h2 id="video-title">Watch video</h2><label class="fl">Video folder<select id="video-library-folder"><option value="">Loading folders…</option></select></label><div id="video-player-status" class="mu video-player-status" role="status" aria-live="polite"></div><video id="video-player" class="video-player" controls playsinline preload="metadata" hidden></video><div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="videocancel">Close</button></div></div></div>`;
+}
 function modal(t){
  if(S.upload)return uploadModal();
+ if(S.video)return videoModal();
  if(S.add)return addModal();
  if(!t)return"";
  if(S.edit)return `<div class="ov" role="dialog" aria-modal="true"><div class="bd" data-a="mcancel"></div><div class="mb"><h2 style="margin-top:2px">Edit trainee name</h2><label class="fl">Trainee name<input id="en-nm" type="text" value="${esc(t.name)}" placeholder="Full name"></label><div class="row" style="margin-top:16px;justify-content:flex-end"><button data-a="mcancel">Cancel</button><button class="p" data-a="esave">Save</button></div></div></div>`;
@@ -121,7 +125,7 @@ const VID=ST.filter(x=>x.t==="VIDEO"),VT=VID.reduce((a,x)=>a+x.min,0),AT=ST.redu
 const mv=mi=>ST.filter(x=>x.m===mi&&x.t==="VIDEO").reduce((a,x)=>a+x.min,0);
 
 // ---- State
-let S={t:[],sel:null,upload:false};
+let S={t:[],sel:null,upload:false,video:false,hls:null};
 // Data is stored on the Python server (data.json) through /api/trainees
 const load=()=>fetch("/api/trainees").then(r=>r.json()).then(d=>{S.t=d}).catch(()=>alert("Cannot reach the server. Is app.py running?"));
 const save=()=>fetch("/api/trainees",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(S.t)}).catch(()=>alert("Could not save. Is app.py running?"));
@@ -156,11 +160,11 @@ function side(t){
  const foot=`<div class="sf"><span class="mu">Theme</span>${tbtn()}</div>`;
  if(!t)return `<aside class="sb">${brand}
   <label class="fl sq"><span>Search</span><input id="q" type="search" value="${esc(S.q||"")}" placeholder="Name, department, designation…" autocomplete="off"></label>
-  <button class="p" data-a="addopen">＋ Add trainee</button><button data-a="uploadopen">↑ Upload video</button><button data-a="csv">Export CSV</button>
+  <button class="p" data-a="addopen">＋ Add trainee</button><button data-a="uploadopen">↑ Upload video</button><button data-a="videoopen">▶ Watch video</button><button data-a="csv">Export CSV</button>
   <div class="sg"></div>
   <div class="sd"><span class="mu">Training duration</span><b>${hm(AT)}</b><span class="mu">${ST.length} steps · ${hm(VT)} of video (${VID.length} videos)</span></div>${foot}</aside>`;
  return `<aside class="sb">${brand}
-  <button data-a="back">← All trainees</button><button data-a="uploadopen">↑ Upload video</button><button data-a="ename">✎ Edit name</button><button class="dgr" data-a="del" data-id="${t.id}">Remove trainee</button>
+  <button data-a="back">← All trainees</button><button data-a="uploadopen">↑ Upload video</button><button data-a="videoopen">▶ Watch video</button><button data-a="ename">✎ Edit name</button><button class="dgr" data-a="del" data-id="${t.id}">Remove trainee</button>
   <div class="sg"></div>
   <div class="sd"><span class="mu">Viewing</span><b>${esc(t.name)}</b></div>${foot}</aside>`;
 }
@@ -228,6 +232,8 @@ document.addEventListener("click",e=>{
  else if(a==="addopen"){S.add=true}
  else if(a==="uploadopen"){S.add=false;S.edit=false;S.modal=null;S.upload=true}
  else if(a==="uploadcancel"){S.upload=false}
+ else if(a==="videoopen"){S.add=false;S.edit=false;S.modal=null;S.upload=false;S.video=true}
+ else if(a==="videocancel"){stopVideoPlayer();S.video=false}
  else if(a==="mcancel"){S.modal=null;S.edit=false;S.add=false}
  else if(a==="ename"){S.edit=true}
  else if(a==="esave"){const el=document.getElementById("en-nm"),n=el.value.trim();if(!n)return el.focus();t.name=n;S.edit=false}
@@ -236,7 +242,62 @@ document.addEventListener("click",e=>{
  else if(a==="theme")return toggleTheme();
  else if(a==="csv")return csv();
  save();render();
+ if(a==="videoopen")loadVideoFolders();
 });
+
+async function loadVideoFolders(){
+ const select=document.getElementById("video-library-folder"),status=document.getElementById("video-player-status");
+ try{
+  const response=await fetch("/api/videos");
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(result.error||"Could not load video folders.");
+  if(!Array.isArray(result.folders))throw new Error("The server returned an invalid video folder list.");
+  select.replaceChildren(new Option("Select a folder",""));
+  result.folders.forEach(folder=>select.add(new Option(folder,folder)));
+  if(result.folders.length)status.textContent="Choose a folder to play its video.";
+  else{select.replaceChildren(new Option("No videos available",""));status.textContent="Upload a video first."}
+ }catch(error){
+  select.replaceChildren(new Option("Unable to load folders",""));
+  status.textContent=error instanceof Error?error.message:String(error);
+ }
+}
+
+function stopVideoPlayer(){
+ if(S.hls){S.hls.destroy();S.hls=null}
+ const player=document.getElementById("video-player");
+ if(player){player.onerror=null;player.pause();player.removeAttribute("src");player.load()}
+}
+
+function playVideo(folder){
+ const player=document.getElementById("video-player"),status=document.getElementById("video-player-status");
+ stopVideoPlayer();
+ if(!folder){player.hidden=true;status.textContent="Choose a folder to play its video.";return}
+ const playlist="/api/videos/"+folder.split("/").map(encodeURIComponent).join("/")+"/index.m3u8";
+ player.hidden=false;
+ player.onerror=()=>{status.textContent="Could not load this video. Check the playlist and storage."};
+ status.textContent="Loading playlist…";
+ if(player.canPlayType("application/vnd.apple.mpegurl")){
+  player.src=playlist;
+  return;
+ }
+ if(!window.Hls||!window.Hls.isSupported()){
+  player.hidden=true;
+  status.textContent="HLS playback is not supported in this browser.";
+  return;
+ }
+ const hls=new window.Hls();
+ S.hls=hls;
+ hls.on(window.Hls.Events.MANIFEST_PARSED,()=>{status.textContent="Ready to play."});
+ hls.on(window.Hls.Events.ERROR,(_,data)=>{
+  if(data.fatal){
+   status.textContent="Could not load this video. Check the playlist and storage.";
+   hls.destroy();
+   if(S.hls===hls)S.hls=null;
+  }
+ });
+ hls.loadSource(playlist);
+ hls.attachMedia(player);
+}
 
 async function uploadVideo(){
  const form=document.getElementById("video-upload-form"),status=document.getElementById("video-upload-status"),progress=document.getElementById("video-upload-progress"),submit=document.getElementById("video-upload-submit");
@@ -271,6 +332,9 @@ document.addEventListener("submit",e=>{
  e.preventDefault();
  uploadVideo();
 });
+document.addEventListener("change",e=>{
+ if(e.target.id==="video-library-folder")playVideo(e.target.value);
+});
 
 function csv(){
  const r=[["Trainee","Branch","Department","Designation","Joining date","Salary","Wage","Step","Module","Type","Task","Monitored by","Assigned","Completed","Verified by","Verified at"]];
@@ -279,7 +343,7 @@ function csv(){
  const u=URL.createObjectURL(new Blob([s],{type:"text/csv"})),a=document.createElement("a");a.href=u;a.download="trainee-log.csv";a.click();
 }
 document.addEventListener("keydown",e=>{
- if(e.key==="Escape"&&(S.modal!=null||S.edit||S.add||S.upload)){S.modal=null;S.edit=false;S.add=false;S.upload=false;render()}
+ if(e.key==="Escape"&&(S.modal!=null||S.edit||S.add||S.upload||S.video)){if(S.video)stopVideoPlayer();S.modal=null;S.edit=false;S.add=false;S.upload=false;S.video=false;render()}
  else if(e.key==="Enter"&&S.add&&e.target.tagName==="INPUT"){const b=document.querySelector('[data-a="add"]');if(b)b.click()}
  else if(e.key==="Enter"&&e.target.id==="en-nm"){const b=document.querySelector('[data-a="esave"]');if(b)b.click()}
 });

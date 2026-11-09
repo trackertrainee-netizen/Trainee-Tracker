@@ -72,6 +72,9 @@ button.dgr{color:var(--dgr)}button.dgr:hover{border-color:var(--dgr)}
 .upload-progress[hidden]{display:none}
 .upload-progress__bar{position:absolute;inset:0 auto 0 -40%;width:40%;border-radius:inherit;background:var(--ok);animation:upload-progress 1.25s ease-in-out infinite}
 @keyframes upload-progress{to{left:100%}}
+.video-player-status{min-height:1.5em;margin:10px 0}
+.video-player{display:block;width:100%;max-height:60vh;aspect-ratio:16/9;border-radius:12px;background:#000}
+.video-player[hidden]{display:none}
 
 /* ---- Current step + module navigation (navy panels with a gold edge) */
 .cur{background:linear-gradient(155deg,var(--ink),var(--navy));color:#fff;border:1px solid rgba(255,255,255,.08);box-shadow:inset 4px 0 0 var(--pn),var(--sh)}
