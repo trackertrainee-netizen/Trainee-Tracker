@@ -29,3 +29,17 @@ const BRANCHES = [
   "HYDERABAD",
   "BANGALORE"
 ];
+
+// Business slicer options (also used when adding a trainee and when mapping videos).
+const BUSINESSES = [
+  "Magnus",
+  "Alims",
+  "M&D",
+  "Merchx"
+];
+
+// Sub slicer (view) options on the trainee list.
+const SUBVIEWS = [
+  "Overview",
+  "Hierarchy"
+];
