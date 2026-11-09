@@ -89,6 +89,16 @@ def _prune_video_jobs():
             del video_jobs[job_id]
 
 
+def _start_video_job(job_id, upload_dir, video_path, folder_name):
+    """Keep the worker alive through graceful shutdown so temp cleanup can finish."""
+    thread = threading.Thread(
+        target=_run_video_job,
+        args=(job_id, upload_dir, video_path, folder_name),
+        daemon=False,
+    )
+    thread.start()
+
+
 def _run_video_job(job_id, upload_dir, video_path, folder_name):
     """Background worker: convert to HLS, upload, and record progress."""
     try:
@@ -385,11 +395,7 @@ def complete_video_upload(upload_id):
                 "error": None,
                 "updated": time.time(),
             }
-        threading.Thread(
-            target=_run_video_job,
-            args=(job_id, upload_dir, video_path, folder_name),
-            daemon=True,
-        ).start()
+        _start_video_job(job_id, upload_dir, video_path, folder_name)
         upload_dir = None
     except ValueError as exc:
         return jsonify(error=str(exc)), 400
@@ -470,11 +476,7 @@ def upload_video():
                 "error": None,
                 "updated": time.time(),
             }
-        threading.Thread(
-            target=_run_video_job,
-            args=(job_id, upload_dir, video_path, folder_name),
-            daemon=True,
-        ).start()
+        _start_video_job(job_id, upload_dir, video_path, folder_name)
         upload_dir = None  # the worker thread now owns and removes it
     except ValueError as exc:
         return jsonify(error=str(exc)), 400
