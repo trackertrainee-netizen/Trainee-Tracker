@@ -94,7 +94,7 @@ function modTable(stats,t){
 }
 // ---- Pop-up window asking for the module score and remark
 function uploadModal(){
- return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="upload-title"><div class="bd" data-a="uploadcancel"></div><div class="mb wide"><h2 id="upload-title">Upload video</h2><div class="mu">The server converts the video to HLS and uploads the playlist and segments.</div><form id="video-upload-form"><label class="fl">Video file<input id="video-file" name="video" type="file" accept="video/*" required></label><label class="fl">Custom destination folder<input id="video-folder" name="folder_name" type="text" placeholder="e.g. marketing-intro" required></label><div id="video-upload-status" class="mu upload-status" role="status" aria-live="polite"></div><div id="video-upload-progress" class="upload-progress" role="progressbar" aria-label="Video conversion and upload in progress" aria-valuetext="In progress" hidden><span class="upload-progress__bar"></span></div><div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="uploadcancel">Cancel</button><button class="p" type="submit" id="video-upload-submit">Convert and upload</button></div></form></div></div>`;
+ return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="upload-title"><div class="bd" data-a="uploadcancel"></div><div class="mb wide"><h2 id="upload-title">Upload video</h2><div class="mu">The server converts the video to HLS and uploads the playlist and segments.</div><form id="video-upload-form"><label class="fl">Video file<input id="video-file" name="video" type="file" accept="video/*" required></label><label class="fl">Parent folder<select id="video-parent-folder" name="parent_folder" required><option value="">Loading parent folders…</option></select></label><div id="parent-create-panel" hidden><label class="fl">New parent folder name<input id="new-parent-folder" type="text" placeholder="e.g. Marketing"></label><div class="row"><button type="button" data-a="parent-create-cancel">Cancel</button><button type="button" class="p" data-a="parent-create" id="parent-create-submit">Create parent folder</button></div></div><div id="parent-folder-status" class="mu" role="status" aria-live="polite"></div><label class="fl">Video folder inside parent<input id="video-folder" name="video_folder" type="text" placeholder="e.g. marketing-intro" required></label><div id="video-upload-status" class="mu upload-status" role="status" aria-live="polite"></div><div id="video-upload-progress" class="upload-progress" role="progressbar" aria-label="Video conversion and upload in progress" aria-valuetext="In progress" hidden><span class="upload-progress__bar"></span></div><div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="uploadcancel">Cancel</button><button class="p" type="submit" id="video-upload-submit">Convert and upload</button></div></form></div></div>`;
 }
 function videoModal(){
  return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="video-title"><div class="bd" data-a="videocancel"></div><div class="mb wide"><h2 id="video-title">Watch video</h2><label class="fl">Video folder<select id="video-library-folder"><option value="">Loading folders…</option></select></label><div id="video-player-status" class="mu video-player-status" role="status" aria-live="polite"></div><video id="video-player" class="video-player" controls playsinline preload="metadata" hidden></video><div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="videocancel">Close</button></div></div></div>`;
@@ -232,6 +232,8 @@ document.addEventListener("click",e=>{
  else if(a==="addopen"){S.add=true}
  else if(a==="uploadopen"){S.add=false;S.edit=false;S.modal=null;S.upload=true}
  else if(a==="uploadcancel"){S.upload=false}
+ else if(a==="parent-create-cancel"){document.getElementById("parent-create-panel").hidden=true;document.getElementById("parent-folder-status").textContent="";return}
+ else if(a==="parent-create"){createParentFolder();return}
  else if(a==="videoopen"){S.add=false;S.edit=false;S.modal=null;S.upload=false;S.video=true}
  else if(a==="videocancel"){stopVideoPlayer();S.video=false}
  else if(a==="mcancel"){S.modal=null;S.edit=false;S.add=false}
@@ -242,8 +244,53 @@ document.addEventListener("click",e=>{
  else if(a==="theme")return toggleTheme();
  else if(a==="csv")return csv();
  save();render();
+ if(a==="uploadopen")loadParentFolders();
  if(a==="videoopen")loadVideoFolders();
 });
+
+async function loadParentFolders(selectedFolder=""){
+ const select=document.getElementById("video-parent-folder"),status=document.getElementById("parent-folder-status");
+ status.textContent="Loading parent folders…";
+ try{
+  const response=await fetch("/api/video-folders");
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(result.error||"Could not load parent folders.");
+  if(!Array.isArray(result.folders))throw new Error("The server returned an invalid parent folder list.");
+  select.replaceChildren(new Option("Select an existing parent folder",""));
+  result.folders.forEach(folder=>select.add(new Option(folder,folder)));
+  const addFolder=new Option("＋ Add parent folder…","__add_parent_folder__");
+  addFolder.dataset.action="create-parent";
+  select.add(addFolder);
+  if(selectedFolder)select.value=selectedFolder;
+  select.dataset.selectedFolder=select.value;
+  status.textContent=result.folders.length?"Select a parent folder, or add one.":"No parent folders yet. Add one to continue.";
+ }catch(error){
+  select.replaceChildren(new Option("Unable to load parent folders",""));
+  select.dataset.selectedFolder="";
+  status.textContent=error instanceof Error?error.message:String(error);
+ }
+}
+
+async function createParentFolder(){
+ const input=document.getElementById("new-parent-folder"),status=document.getElementById("parent-folder-status"),submit=document.getElementById("parent-create-submit");
+ const folder=input.value.trim();
+ if(!folder){input.focus();return}
+ submit.disabled=true;
+ status.textContent="Creating parent folder…";
+ try{
+  const response=await fetch("/api/video-folders",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({folder})});
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(result.error||"Could not create parent folder.");
+  input.value="";
+  document.getElementById("parent-create-panel").hidden=true;
+  await loadParentFolders(result.folder);
+  status.textContent=`Parent folder "${result.folder}" created.`;
+ }catch(error){
+  status.textContent=error instanceof Error?error.message:String(error);
+ }finally{
+  if(submit.isConnected)submit.disabled=false;
+ }
+}
 
 async function loadVideoFolders(){
  const select=document.getElementById("video-library-folder"),status=document.getElementById("video-player-status");
@@ -333,7 +380,14 @@ document.addEventListener("submit",e=>{
  uploadVideo();
 });
 document.addEventListener("change",e=>{
- if(e.target.id==="video-library-folder")playVideo(e.target.value);
+ if(e.target.id==="video-parent-folder"){
+  const select=e.target,option=select.selectedOptions[0];
+  if(option&&option.dataset.action==="create-parent"){
+   select.value=select.dataset.selectedFolder||"";
+   document.getElementById("parent-create-panel").hidden=false;
+   document.getElementById("new-parent-folder").focus();
+  }else select.dataset.selectedFolder=select.value;
+ }else if(e.target.id==="video-library-folder")playVideo(e.target.value);
 });
 
 function csv(){

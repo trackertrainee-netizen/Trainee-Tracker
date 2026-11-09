@@ -64,6 +64,40 @@ def get_video_folders():
     return sorted(folders)
 
 
+def get_parent_folders():
+    """Return top-level folders available for video uploads."""
+    client = _get_s3_client()
+    paginator = client.get_paginator("list_objects_v2")
+    folders = set()
+    for page in paginator.paginate(Bucket=BUCKET_NAME, Delimiter="/"):
+        for prefix in page.get("CommonPrefixes", []):
+            folder = prefix["Prefix"].rstrip("/")
+            if folder:
+                folders.add(folder)
+    return sorted(folders)
+
+
+def create_parent_folder(folder_name):
+    """Create an empty top-level folder marker in the bucket."""
+    folder_name = os.fspath(folder_name)
+    if (
+        not folder_name
+        or folder_name != folder_name.strip()
+        or folder_name in (".", "..")
+        or "/" in folder_name
+        or "\\" in folder_name
+    ):
+        raise ValueError("Enter a valid parent folder name.")
+    if folder_name in get_parent_folders():
+        raise FileExistsError("That parent folder already exists.")
+
+    _get_s3_client().put_object(
+        Bucket=BUCKET_NAME,
+        Key=f"{folder_name}/",
+        Body=b"",
+    )
+
+
 def get_video_object(object_key):
     """Get one HLS playlist or segment from the configured bucket."""
     return _get_s3_client().get_object(Bucket=BUCKET_NAME, Key=object_key)

@@ -13,7 +13,13 @@ import threading
 from botocore.exceptions import BotoCoreError, ClientError
 from flask import Flask, Response, jsonify, request
 
-from CLOUD_FLARE.modules import get_video_folders, get_video_object, upload_video_as_hls
+from CLOUD_FLARE.modules import (
+    create_parent_folder,
+    get_parent_folders,
+    get_video_folders,
+    get_video_object,
+    upload_video_as_hls,
+)
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE, "data.json")
@@ -71,6 +77,41 @@ def list_video_folders():
         return jsonify(error="Could not load videos from storage."), 502
 
 
+@app.get("/api/video-folders")
+def list_video_parent_folders():
+    try:
+        return jsonify(folders=get_parent_folders())
+    except RuntimeError as exc:
+        app.logger.error("Video storage configuration error: %s", exc)
+        return jsonify(error=str(exc)), 503
+    except (BotoCoreError, ClientError):
+        app.logger.exception("Could not list video parent folders")
+        return jsonify(error="Could not load parent folders from storage."), 502
+
+
+@app.post("/api/video-folders")
+def add_video_parent_folder():
+    data = request.get_json(silent=True)
+    folder_name = data.get("folder", "") if isinstance(data, dict) else ""
+    if not isinstance(folder_name, str):
+        return jsonify(error="Enter a valid parent folder name."), 400
+
+    try:
+        create_parent_folder(folder_name)
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    except FileExistsError as exc:
+        return jsonify(error=str(exc)), 409
+    except RuntimeError as exc:
+        app.logger.error("Video storage configuration error: %s", exc)
+        return jsonify(error=str(exc)), 503
+    except (BotoCoreError, ClientError):
+        app.logger.exception("Could not create video parent folder")
+        return jsonify(error="Could not create parent folder in storage."), 502
+
+    return jsonify(folder=folder_name), 201
+
+
 @app.get("/api/videos/<path:object_key>")
 def stream_video_object(object_key):
     parts = object_key.split("/")
@@ -125,13 +166,32 @@ def stream_video_object(object_key):
 @app.post("/api/videos")
 def upload_video():
     video = request.files.get("video")
-    folder_name = request.form.get("folder_name", "").strip().replace("\\", "/").strip("/")
+    parent_folder = request.form.get("parent_folder", "")
+    video_folder = request.form.get("video_folder", "").strip()
     if video is None or not video.filename:
         return jsonify(error="Select a video to upload"), 400
-    if not folder_name or any(part in ("", ".", "..") for part in folder_name.split("/")):
-        return jsonify(error="Enter a valid destination folder name"), 400
+    if (
+        not parent_folder
+        or parent_folder != parent_folder.strip()
+        or parent_folder in (".", "..")
+        or "/" in parent_folder
+        or "\\" in parent_folder
+    ):
+        return jsonify(error="Select a valid parent folder."), 400
+    if (
+        not video_folder
+        or video_folder in (".", "..")
+        or "/" in video_folder
+        or "\\" in video_folder
+    ):
+        return jsonify(error="Enter a valid video folder name."), 400
 
     try:
+        if parent_folder not in get_parent_folders():
+            return jsonify(error="Select an existing parent folder."), 400
+        folder_name = f"{parent_folder}/{video_folder}"
+        if folder_name in get_video_folders():
+            return jsonify(error="A video folder with that name already exists under this parent."), 409
         with tempfile.TemporaryDirectory(prefix="trainee_tracker_upload_") as upload_dir:
             video_path = os.path.join(upload_dir, "input_video")
             video.save(video_path)
@@ -141,6 +201,9 @@ def upload_video():
     except RuntimeError as exc:
         app.logger.error("Video upload configuration error: %s", exc)
         return jsonify(error=str(exc)), 503
+    except (BotoCoreError, ClientError):
+        app.logger.exception("Could not access video storage")
+        return jsonify(error="Could not access video storage."), 502
     except FileNotFoundError as exc:
         app.logger.error("Required video upload program is unavailable: %s", exc.filename)
         return jsonify(error=f"Required program {exc.filename or 'ffmpeg or rclone'} is not available on the server"), 503
