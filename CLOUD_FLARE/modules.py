@@ -152,8 +152,76 @@ def _can_copy_to_hls(file_path):
     )
 
 
-def upload_video_as_hls(file_path, folder_name):
-    """Transcode a video to HLS and upload its playlist and segments to a custom folder."""
+def _video_duration(file_path):
+    """Duration in seconds, or None if it cannot be determined."""
+    try:
+        out = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=nw=1:nk=1", os.fspath(file_path)],
+            check=True, capture_output=True, text=True,
+        ).stdout.strip()
+        duration = float(out)
+        return duration if duration > 0 else None
+    except (subprocess.CalledProcessError, ValueError):
+        return None
+
+
+def _run_ffmpeg_hls(cmd, duration, on_percent):
+    """Run ffmpeg and report 0-100 from its -progress output."""
+    with tempfile.TemporaryFile() as err_file:
+        proc = subprocess.Popen(
+            cmd + ["-progress", "pipe:1", "-nostats", "-loglevel", "error"],
+            stdout=subprocess.PIPE, stderr=err_file, text=True,
+        )
+        last = -1
+        for line in proc.stdout:
+            key, _, value = line.strip().partition("=")
+            if key in ("out_time_us", "out_time_ms") and duration and value.lstrip("-").isdigit():
+                percent = min(99, max(0, int(int(value) / 1_000_000 / duration * 100)))
+                if percent != last:
+                    last = percent
+                    on_percent(percent)
+        code = proc.wait()
+        if code != 0:
+            err_file.seek(0)
+            print(err_file.read().decode(errors="replace"))
+            raise subprocess.CalledProcessError(code, cmd[0])
+    on_percent(100)
+
+
+def _run_rclone_copy(source_dir, destination, env, on_percent):
+    """Run rclone copy and report 0-100 from its JSON stats log."""
+    proc = subprocess.Popen(
+        ["rclone", "copy", source_dir, destination,
+         "--use-json-log", "-v", "--stats", "500ms"],
+        env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
+    )
+    last = -1
+    for line in proc.stderr:
+        try:
+            stats = json.loads(line).get("stats")
+        except ValueError:
+            continue
+        if not stats or not stats.get("totalBytes"):
+            continue
+        percent = min(99, int(stats.get("bytes", 0) / stats["totalBytes"] * 100))
+        if percent != last:
+            last = percent
+            on_percent(percent)
+    code = proc.wait()
+    if code != 0:
+        raise subprocess.CalledProcessError(code, "rclone")
+    on_percent(100)
+
+
+def upload_video_as_hls(file_path, folder_name, progress=None):
+    """Transcode a video to HLS and upload its playlist and segments to a custom folder.
+
+    progress, if given, is called as progress(stage, percent) where stage is
+    "converting" (ffmpeg splitting into HLS) or "uploading" (rclone to R2)
+    and percent is 0-100 within that stage.
+    """
+    report = progress or (lambda stage, percent: None)
     folder_name = os.fspath(folder_name).replace("\\", "/").strip("/")
     if not folder_name or any(part in ("", ".", "..") for part in folder_name.split("/")):
         raise ValueError("folder_name must be a valid folder path.")
@@ -168,7 +236,8 @@ def upload_video_as_hls(file_path, folder_name):
             if can_copy
             else ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-c:a", "aac"]
         )
-        subprocess.run(
+        report("converting", 0)
+        _run_ffmpeg_hls(
             [
                 "ffmpeg", "-y", "-nostdin", "-i", os.fspath(file_path),
                 "-map", "0:v:0", "-map", "0:a:0?",
@@ -178,10 +247,13 @@ def upload_video_as_hls(file_path, folder_name):
                 "-hls_segment_filename", segment_pattern,
                 playlist_path,
             ],
-            check=True,
+            _video_duration(file_path),
+            lambda percent: report("converting", percent),
         )
-        subprocess.run(
-            ["rclone", "copy", hls_dir, f"r2:{BUCKET_NAME}/{folder_name}"],
-            env=env,
-            check=True,
+        report("uploading", 0)
+        _run_rclone_copy(
+            hls_dir,
+            f"r2:{BUCKET_NAME}/{folder_name}",
+            env,
+            lambda percent: report("uploading", percent),
         )

@@ -94,10 +94,10 @@ function modTable(stats,t){
 }
 // ---- Pop-up window asking for the module score and remark
 function uploadModal(){
- return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="upload-title"><div class="bd" data-a="uploadcancel"></div><div class="mb wide"><h2 id="upload-title">Upload video</h2><div class="mu">The video is uploaded in 200 MB chunks, then converted to HLS.</div><form id="video-upload-form"><label class="fl">Video file<input id="video-file" name="video" type="file" accept="video/*" required></label><label class="fl">Parent folder<select id="video-parent-folder" name="parent_folder" required><option value="">Loading parent folders…</option></select></label><div id="parent-create-panel" hidden><label class="fl">New parent folder name<input id="new-parent-folder" type="text" placeholder="e.g. Marketing"></label><div class="row"><button type="button" data-a="parent-create-cancel">Cancel</button><button type="button" class="p" data-a="parent-create" id="parent-create-submit">Create parent folder</button></div></div><div id="parent-folder-status" class="mu" role="status" aria-live="polite"></div><label class="fl">Video folder inside parent<input id="video-folder" name="video_folder" type="text" placeholder="e.g. marketing-intro" required></label><div id="video-upload-status" class="mu upload-status" role="status" aria-live="polite"></div><div id="video-upload-progress" class="upload-progress" role="progressbar" aria-label="Video upload progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="Upload starting" hidden><span class="upload-progress__bar"></span></div><div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="uploadcancel">Cancel</button><button class="p" type="submit" id="video-upload-submit">Convert and upload</button></div></form></div></div>`;
+ return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="upload-title"><div class="bd" data-a="uploadcancel"></div><div class="mb wide"><h2 id="upload-title">Upload video</h2><div class="mu">The server converts the video to HLS and uploads the playlist and segments.</div><form id="video-upload-form"><label class="fl">Video file<input id="video-file" name="video" type="file" accept="video/*" required></label><label class="fl">Parent folder<select id="video-parent-folder" name="parent_folder" required><option value="">Loading parent folders…</option></select></label><div id="parent-create-panel" hidden><label class="fl">New parent folder name<input id="new-parent-folder" type="text" placeholder="e.g. Marketing"></label><div class="row"><button type="button" data-a="parent-create-cancel">Cancel</button><button type="button" class="p" data-a="parent-create" id="parent-create-submit">Create parent folder</button></div></div><div id="parent-folder-status" class="mu" role="status" aria-live="polite"></div><label class="fl">Video folder inside parent<input id="video-folder" name="video_folder" type="text" placeholder="e.g. marketing-intro" required></label><div id="video-upload-status" class="mu upload-status" role="status" aria-live="polite"></div><div id="video-upload-progress" class="upload-progress" role="progressbar" aria-label="Video upload progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden><span class="upload-progress__bar"></span></div><div id="video-upload-meta" class="upload-meta" hidden><span id="video-upload-phase"></span><strong id="video-upload-pct">0%</strong></div><div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="uploadcancel">Cancel</button><button class="p" type="submit" id="video-upload-submit">Convert and upload</button></div></form></div></div>`;
 }
 function videoModal(){
- return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="video-title"><div class="bd" data-a="videocancel"></div><div class="mb wide"><h2 id="video-title">Watch video</h2><label class="fl">Video folder<select id="video-library-folder"><option value="">Loading folders…</option></select></label><div id="video-player-status" class="mu video-player-status" role="status" aria-live="polite"></div><video id="video-player" class="video-player" controls playsinline preload="auto" hidden></video><div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="videocancel">Close</button></div></div></div>`;
+ return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="video-title"><div class="bd" data-a="videocancel"></div><div class="mb wide"><h2 id="video-title">Watch video</h2><label class="fl">Video folder<select id="video-library-folder"><option value="">Loading folders…</option></select></label><div id="video-player-status" class="mu video-player-status" role="status" aria-live="polite"></div><video id="video-player" class="video-player" controls playsinline preload="metadata" hidden></video><div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="videocancel">Close</button></div></div></div>`;
 }
 function modal(t){
  if(S.upload)return uploadModal();
@@ -332,7 +332,7 @@ function playVideo(folder){
   status.textContent="HLS playback is not supported in this browser.";
   return;
  }
- const hls=new window.Hls({maxBufferLength:60});
+ const hls=new window.Hls();
  S.hls=hls;
  hls.on(window.Hls.Events.MANIFEST_PARSED,()=>{status.textContent="Ready to play."});
  hls.on(window.Hls.Events.ERROR,(_,data)=>{
@@ -346,69 +346,82 @@ function playVideo(folder){
  hls.attachMedia(player);
 }
 
-async function uploadVideo(){
- const form=document.getElementById("video-upload-form"),status=document.getElementById("video-upload-status"),progress=document.getElementById("video-upload-progress"),submit=document.getElementById("video-upload-submit");
- if(!form.reportValidity())return;
- const file=document.getElementById("video-file").files[0];
- if(!file)return;
- const bar=progress.querySelector(".upload-progress__bar");
- submit.disabled=true;
- progress.hidden=false;
- progress.setAttribute("aria-valuenow","0");
- progress.setAttribute("aria-valuetext","Upload starting");
- progress.classList.remove("upload-progress--indeterminate");
- bar.style.width="0%";
- status.classList.remove("upload-status--success");
- status.textContent="Preparing upload…";
- let uploadId=null;
- try{
-  const parentFolder=document.getElementById("video-parent-folder").value;
-  const videoFolder=document.getElementById("video-folder").value.trim();
-  const startResponse=await fetch("/api/video-uploads",{
-   method:"POST",
-   headers:{"Content-Type":"application/json"},
-   body:JSON.stringify({parent_folder:parentFolder,video_folder:videoFolder,file_size:file.size})
-  });
-  const session=await startResponse.json().catch(()=>({}));
-  if(!startResponse.ok)throw new Error(session.error||"Could not start video upload.");
-  if(typeof session.upload_id!=="string"||!Number.isInteger(session.chunk_size)||session.chunk_size<=0)throw new Error("The server returned invalid upload details.");
-  uploadId=session.upload_id;
-  const totalChunks=Math.ceil(file.size/session.chunk_size);
-  for(let index=0;index<totalChunks;index++){
-   const start=index*session.chunk_size,end=Math.min(file.size,start+session.chunk_size);
-   const chunk=file.slice(start,end),body=new FormData();
-   body.append("chunk",chunk,file.name);
-   status.textContent=`Uploading video part ${index+1} of ${totalChunks}…`;
-   await new Promise((resolve,reject)=>{
-    const xhr=new XMLHttpRequest();
-    xhr.open("POST",`/api/video-uploads/${encodeURIComponent(session.upload_id)}/${index}`);
-    xhr.upload.addEventListener("progress",event=>{
-     const sent=start+Math.min(event.loaded,chunk.size);
-     const percent=Math.floor(sent/file.size*100);
-     progress.setAttribute("aria-valuenow",String(percent));
-     progress.setAttribute("aria-valuetext",`Uploading ${percent}%`);
-     bar.style.width=`${percent}%`;
-     status.textContent=`Uploading video… ${percent}%`;
-    });
-    xhr.addEventListener("load",()=>{
-     let result={};
-     try{result=JSON.parse(xhr.responseText||"{}")}catch{reject(new Error("Server returned an invalid upload response."));return}
-     if(xhr.status<200||xhr.status>=300)reject(new Error(result.error||"Video upload failed."));
-     else resolve();
-    });
-    xhr.addEventListener("error",()=>reject(new Error("Network error during video upload.")));
-    xhr.addEventListener("abort",()=>reject(new Error("Video upload was interrupted.")));
-    xhr.send(body);
-   });
+function sendVideo(form,onProgress){
+ return new Promise((resolve,reject)=>{
+  const xhr=new XMLHttpRequest();
+  xhr.open("POST","/api/videos");
+  xhr.responseType="text";
+  xhr.upload.onprogress=e=>{if(e.lengthComputable)onProgress(e.loaded,e.total)};
+  xhr.upload.onload=()=>onProgress(1,1,true);
+  xhr.onerror=()=>reject(new Error("Network error during upload."));
+  xhr.onabort=()=>reject(new Error("Upload cancelled."));
+  xhr.onload=()=>{
+   let result={};
+   try{result=JSON.parse(xhr.responseText||"{}")}catch(_){}
+   if(xhr.status>=200&&xhr.status<300)resolve(result);
+   else reject(new Error(result.error||"Video upload failed."));
+  };
+  xhr.send(new FormData(form));
+ });
+}
+async function pollVideoJob(id,onUpdate){
+ for(;;){
+  await new Promise(r=>setTimeout(r,800));
+  let job;
+  try{
+   const r=await fetch("/api/video-jobs/"+encodeURIComponent(id),{cache:"no-store"});
+   job=await r.json();
+   if(!r.ok)throw new Error(job.error||"Could not read job status.");
+  }catch(err){
+   if(err instanceof TypeError)continue;
+   throw err;
   }
-  status.textContent="Upload received. Converting and uploading to storage…";
-  progress.setAttribute("aria-valuenow","100");
-  progress.setAttribute("aria-valuetext","Upload complete; processing video");
-  bar.style.width="100%";
-  const completeResponse=await fetch(`/api/video-uploads/${encodeURIComponent(uploadId)}/complete`,{method:"POST"});
-  const result=await completeResponse.json().catch(()=>({}));
-  if(!completeResponse.ok)throw new Error(result.error||"Video conversion or upload failed.");
-  uploadId=null;
+  onUpdate(job);
+  if(job.status==="done")return job;
+  if(job.status==="error")throw new Error(job.error||"Video processing failed.");
+ }
+}
+async function uploadVideo(){
+ const form=document.getElementById("video-upload-form"),status=document.getElementById("video-upload-status"),progress=document.getElementById("video-upload-progress"),submit=document.getElementById("video-upload-submit"),meta=document.getElementById("video-upload-meta"),phase=document.getElementById("video-upload-phase"),pct=document.getElementById("video-upload-pct"),bar=progress.firstElementChild;
+ if(!form.reportValidity())return;
+ submit.disabled=true;
+ progress.hidden=false;meta.hidden=false;
+ progress.classList.remove("is-converting");
+ let shown=0;
+ const setPct=v=>{const n=Math.max(shown,Math.min(100,Math.round(v)));shown=n;bar.style.width=n+"%";progress.setAttribute("aria-valuenow",n);pct.textContent=n+"%"};
+ const fmt=b=>b>=1048576?(b/1048576).toFixed(1)+" MB":Math.round(b/1024)+" KB";
+ setPct(0);
+ phase.textContent="Uploading video to server…";
+ status.classList.remove("upload-status--success");
+ status.textContent="Keep this page open until the upload finishes.";
+ try{
+  // One bar for the whole job: 0-40% browser upload, 40-60% HLS split, 60-100% storage upload
+  let result=await sendVideo(form,(loaded,total,done)=>{
+   if(done){
+    setPct(40);
+    phase.textContent="Splitting video into HLS segments…";
+    status.textContent="Upload received. Keep this page open.";
+   }else{
+    setPct(loaded/total*40);
+    phase.textContent="Uploading video to server…";
+    status.textContent=`Uploading ${fmt(loaded)} of ${fmt(total)}`;
+   }
+  });
+  if(result.job_id){
+   result=await pollVideoJob(result.job_id,job=>{
+    const p=job.percent||0;
+    if(job.status==="uploading"){
+     setPct(60+p*0.4);
+     phase.textContent="Uploading HLS segments to storage…";
+     status.textContent="Almost done. Keep this page open.";
+    }else{
+     setPct(40+p*0.2);
+     phase.textContent="Splitting video into HLS segments…";
+     status.textContent="Converting video. Keep this page open.";
+    }
+   });
+   setPct(100);
+  }
   status.classList.add("upload-status--success");
   status.replaceChildren();
   const icon=document.createElement("span");
@@ -419,11 +432,11 @@ async function uploadVideo(){
   message.textContent=`Upload complete. Playlist: ${result.playlist}`;
   status.append(icon,message);
  }catch(error){
-  if(uploadId)await fetch(`/api/video-uploads/${encodeURIComponent(uploadId)}`,{method:"DELETE"}).catch(()=>{});
   status.classList.remove("upload-status--success");
   status.textContent=`Upload failed: ${error instanceof Error?error.message:String(error)}`;
  }finally{
-  progress.hidden=true;
+  progress.hidden=true;meta.hidden=true;
+  progress.classList.remove("is-converting");
   if(submit.isConnected)submit.disabled=false;
  }
 }

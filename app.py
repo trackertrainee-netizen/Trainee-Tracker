@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import time
 import uuid
 
 from botocore.exceptions import BotoCoreError, ClientError
@@ -28,6 +29,9 @@ DATA_FILE = os.path.join(BASE, "data.json")
 UPLOAD_CHUNK_SIZE = 200 * 1024 * 1024
 UPLOAD_CHUNK_DIR = os.path.join(tempfile.gettempdir(), "trainee_tracker_upload_chunks")
 lock = threading.Lock()
+video_jobs = {}
+video_jobs_lock = threading.Lock()
+VIDEO_JOB_TTL = 60 * 60  # keep finished jobs for an hour
 
 app = Flask(__name__, static_folder="static", static_url_path="")
 
@@ -68,6 +72,55 @@ def _read_upload_session(upload_id):
     except (FileNotFoundError, json.JSONDecodeError):
         return session_dir, None
     return session_dir, metadata if isinstance(metadata, dict) else None
+
+
+def _update_video_job(job_id, **fields):
+    with video_jobs_lock:
+        video_jobs[job_id].update(fields, updated=time.time())
+
+
+def _prune_video_jobs():
+    cutoff = time.time() - VIDEO_JOB_TTL
+    with video_jobs_lock:
+        for job_id in [
+            key for key, job in video_jobs.items()
+            if job["status"] in ("done", "error") and job["updated"] < cutoff
+        ]:
+            del video_jobs[job_id]
+
+
+def _run_video_job(job_id, upload_dir, video_path, folder_name):
+    """Background worker: convert to HLS, upload, and record progress."""
+    try:
+        upload_video_as_hls(
+            video_path,
+            folder_name,
+            progress=lambda stage, percent: _update_video_job(job_id, status=stage, percent=percent),
+        )
+        _update_video_job(job_id, status="done", percent=100, playlist=f"{folder_name}/index.m3u8")
+    except ValueError as exc:
+        _update_video_job(job_id, status="error", error=str(exc))
+    except RuntimeError as exc:
+        app.logger.error("Video upload configuration error: %s", exc)
+        _update_video_job(job_id, status="error", error=str(exc))
+    except (BotoCoreError, ClientError):
+        app.logger.exception("Could not access video storage")
+        _update_video_job(job_id, status="error", error="Could not access video storage.")
+    except FileNotFoundError as exc:
+        app.logger.error("Required video upload program is unavailable: %s", exc.filename)
+        _update_video_job(
+            job_id,
+            status="error",
+            error=f"Required program {exc.filename or 'ffmpeg or rclone'} is not available on the server",
+        )
+    except subprocess.CalledProcessError:
+        app.logger.exception("Video conversion or upload failed")
+        _update_video_job(job_id, status="error", error="Video conversion or upload failed. Check the server logs.")
+    except Exception:
+        app.logger.exception("Unexpected video upload failure")
+        _update_video_job(job_id, status="error", error="Video upload failed unexpectedly. Check the server logs.")
+    finally:
+        shutil.rmtree(upload_dir, ignore_errors=True)
 
 
 @app.get("/")
@@ -374,16 +427,34 @@ def upload_video():
     ):
         return jsonify(error="Enter a valid video folder name."), 400
 
+    upload_dir = None
     try:
         if parent_folder not in get_parent_folders():
             return jsonify(error="Select an existing parent folder."), 400
         folder_name = f"{parent_folder}/{video_folder}"
         if folder_name in get_video_folders():
             return jsonify(error="A video folder with that name already exists under this parent."), 409
-        with tempfile.TemporaryDirectory(prefix="trainee_tracker_upload_") as upload_dir:
-            video_path = os.path.join(upload_dir, "input_video")
-            video.save(video_path)
-            upload_video_as_hls(video_path, folder_name)
+
+        upload_dir = tempfile.mkdtemp(prefix="trainee_tracker_upload_")
+        video_path = os.path.join(upload_dir, "input_video")
+        video.save(video_path)
+
+        _prune_video_jobs()
+        job_id = str(uuid.uuid4())
+        with video_jobs_lock:
+            video_jobs[job_id] = {
+                "status": "converting",
+                "percent": 0,
+                "playlist": None,
+                "error": None,
+                "updated": time.time(),
+            }
+        threading.Thread(
+            target=_run_video_job,
+            args=(job_id, upload_dir, video_path, folder_name),
+            daemon=True,
+        ).start()
+        upload_dir = None  # the worker thread now owns and removes it
     except ValueError as exc:
         return jsonify(error=str(exc)), 400
     except RuntimeError as exc:
@@ -392,14 +463,26 @@ def upload_video():
     except (BotoCoreError, ClientError):
         app.logger.exception("Could not access video storage")
         return jsonify(error="Could not access video storage."), 502
-    except FileNotFoundError as exc:
-        app.logger.error("Required video upload program is unavailable: %s", exc.filename)
-        return jsonify(error=f"Required program {exc.filename or 'ffmpeg or rclone'} is not available on the server"), 503
-    except subprocess.CalledProcessError:
-        app.logger.exception("Video conversion or upload failed")
-        return jsonify(error="Video conversion or upload failed. Check the server logs."), 502
+    finally:
+        if upload_dir:
+            shutil.rmtree(upload_dir, ignore_errors=True)
 
-    return jsonify(ok=True, folder=folder_name, playlist=f"{folder_name}/index.m3u8")
+    return jsonify(job_id=job_id), 202
+
+
+@app.get("/api/video-jobs/<job_id>")
+def video_job_status(job_id):
+    with video_jobs_lock:
+        job = video_jobs.get(job_id)
+        job = dict(job) if job else None
+    if job is None:
+        return jsonify(error="Video upload job not found."), 404
+    return jsonify(
+        status=job["status"],
+        percent=job["percent"],
+        playlist=job["playlist"],
+        error=job["error"],
+    )
 
 
 if __name__ == "__main__":
