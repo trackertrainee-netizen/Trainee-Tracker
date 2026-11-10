@@ -197,7 +197,7 @@ function accForm(){
  const f=S.accf;if(!f)return"";
  const ck=(name,list,sel)=>`<div class="acc-cks">${list.map(x=>`<label class="acc-ck"><input type="checkbox" data-ck="${name}" value="${esc(x)}"${sel.includes(x)?" checked":""}> ${esc(x)}</label>`).join("")}</div>`;
  const names=[...new Set(S.t.map(t=>t.name).filter(Boolean))],tr=f.trainee&&!names.includes(f.trainee)?[f.trainee,...names]:names;
- return `<div class="card acc-form"><h2 style="font-size:1.125rem">${f.i<0?"Add user":"Edit user"}</h2><div class="fg"><label>Full name<input id="acc-name" value="${esc(f.name)}"></label><label>Username<input id="acc-user" value="${esc(f.username)}" autocomplete="off" autocapitalize="none"></label><label>Password<input id="acc-pass" value="${esc(f.password)}" autocomplete="off"></label><label>Role<select id="acc-role">${PERM_ROLES.map(r=>`<option value="${r}"${r===f.role?" selected":""}>${esc(ROLE_LABELS[r]||r)}</option>`).join("")}</select></label></div>`
+ return `<div class="card acc-form"><h2 style="font-size:1.125rem">${f.i<0?"Add user":"Edit user"}</h2><div class="fg"><label>Full name<input id="acc-name" value="${esc(f.name)}"></label><label>Username<input id="acc-user" value="${esc(f.username)}" autocomplete="off" autocapitalize="none"></label><label>Password<div class="pw-wrap"><input id="acc-pass" type="password" value="${esc(f.password)}" autocomplete="new-password">${passwordToggle("acc-pass")}</div></label><label>Role<select id="acc-role">${PERM_ROLES.map(r=>`<option value="${r}"${r===f.role?" selected":""}>${esc(ROLE_LABELS[r]||r)}</option>`).join("")}</select></label></div>`
  +(f.role==="admin"||f.role==="department"?`<div class="fl"><span>Business${f.role==="department"?" (leave empty = every business)":""}</span>${ck("biz",BIZ,f.business)}</div>`:"")
  +(f.role==="department"?`<div class="fl"><span>Department</span>${ck("dept",DEPTS,f.dept)}</div>`:"")
  +(f.role==="trainee"?`<label class="fl">Trainee<select id="acc-trainee"><option value="">Select trainee</option>${tr.map(n=>`<option${n===f.trainee?" selected":""}>${esc(n)}</option>`).join("")}</select></label>`:"")
@@ -273,7 +273,7 @@ function renderLogin(){
  const ap=document.getElementById("app");S.lv=null;
  if(ap.querySelector(".lgn"))return; // keep what the person has typed
  ap.classList.remove("an");
- ap.innerHTML=`<div class="lgn"><form class="card lgc" id="login-form"><div class="bk"><div class="lg">M</div><div><div class="brand">Magnus</div><div class="mu">Trainee Tracker</div></div></div><div><h1>Sign in</h1><div class="mu" style="margin-top:4px">Use the account given to you by your administrator.</div></div><label class="fl">Username<input id="lg-u" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required></label><label class="fl">Password<input id="lg-p" name="password" type="password" autocomplete="current-password" required></label><label class="lg-rm"><input type="checkbox" id="lg-r"> Keep me signed in on this device</label><div id="lg-e" class="lg-err" role="alert" aria-live="polite"></div><button class="p" type="submit">Sign in</button></form></div>`;
+ ap.innerHTML=`<div class="lgn"><form class="card lgc" id="login-form"><div class="bk"><div class="lg">M</div><div><div class="brand">Magnus</div><div class="mu">Trainee Tracker</div></div></div><div><h1>Sign in</h1><div class="mu" style="margin-top:4px">Use the account given to you by your administrator.</div></div><label class="fl">Username<input id="lg-u" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required></label><label class="fl">Password<div class="pw-wrap"><input id="lg-p" name="password" type="password" autocomplete="current-password" required>${passwordToggle("lg-p")}</div></label><label class="lg-rm"><input type="checkbox" id="lg-r"> Keep me signed in on this device</label><div id="lg-e" class="lg-err" role="alert" aria-live="polite"></div><button class="p" type="submit">Sign in</button></form></div>`;
  const u=document.getElementById("lg-u");if(u)u.focus();
 }
 document.addEventListener("submit",e=>{
@@ -293,6 +293,9 @@ const load=()=>fetch("/api/trainees").then(r=>r.json()).then(d=>{if(!Array.isArr
 const save=()=>S.loaded?fetch("/api/trainees",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(S.t)}).catch(()=>alert("Could not save. Is app.py running?")):Promise.resolve();
 const now=()=>new Date().toISOString();
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const EYE='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 3 18 18M10.6 10.6a2 2 0 0 0 2.8 2.8"/><path d="M9.9 5.2A10.7 10.7 0 0 1 12 5c6.4 0 10 7 10 7a14.8 14.8 0 0 1-3.1 3.8M6.2 6.2C3.5 8 2 12 2 12s3.6 7 10 7a10.5 10.5 0 0 0 4-.8"/></svg>';
+const passwordToggle=id=>`<button class="pw-toggle" type="button" data-a="password-toggle" data-target="${id}" aria-label="Show password" title="Show password">${EYE}</button>`;
 const fmt=i=>i?new Date(i).toLocaleString([], {dateStyle:"medium",timeStyle:"short"}):"–";
 const took=(a,b)=>{if(!a||!b)return"–";const m=Math.round((new Date(b)-new Date(a))/60000);return m>=60?Math.floor(m/60)+" h "+m%60+" m":m+" m"};
 const done=t=>t.logs.filter(l=>l.vt).length;
@@ -463,6 +466,7 @@ const nav=`<div class="navbar"><button class="gh" data-a="prev" ${vm<=0?"disable
 // ---- Actions
 document.addEventListener("click",e=>{
  const b=e.target.closest("[data-a]");if(!b)return;const a=b.dataset.a,t=S.t.find(x=>x.id===S.sel);
+ if(a==="password-toggle"){const input=document.getElementById(b.dataset.target);if(!input)return;const visible=input.type==="password";input.type=visible?"text":"password";b.setAttribute("aria-label",visible?"Hide password":"Show password");b.title=visible?"Hide password":"Show password";b.innerHTML=visible?EYE_OFF:EYE;return}
  if(a==="logout")return logout();
  const NEED={addopen:"add",add:"add",del:"del",ename:"ename",esave:"ename",uploadopen:"upload",hyremove:"hier",ver:"verify",score:"score",msave:"score",csv:"csv"};
  if(a.startsWith("acc"))return accAction(a,b);
