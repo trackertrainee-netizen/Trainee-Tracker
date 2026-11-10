@@ -253,7 +253,7 @@ function hierarchy(){
 const bstats=L=>{const aw=L.filter(t=>{const l=cur(t);return l&&l.c}).length,dn=L.filter(t=>status(t)[0]==="Completed").length;return{n:L.length,aw,dn,ip:L.length-aw-dn}};
 function bizCards(){
  return '<h2 class="bh">Businesses</h2><div class="bg">'+BIZ.map(b=>{const k=bstats(S.t.filter(t=>biz(t)===b));return `<div class="card item bz" data-a="openbiz" data-b="${esc(b)}" role="button" tabindex="0">
-  <div class="sp"><b>${esc(b)}</b><span class="mu">Open ›</span></div>
+  <div class="sp"><b>${esc(b)}</b></div>
   <div class="bn">${k.n}</div><div class="mu">${k.n===1?"trainee":"trainees"}</div>
   <div class="bs mu"><span>${k.ip} in progress</span><span>${k.aw} awaiting</span><span>${k.dn} completed</span></div></div>`}).join("")+'</div>';
 }
