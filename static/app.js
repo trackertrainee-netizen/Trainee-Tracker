@@ -156,6 +156,7 @@ const SESSION_KEY="mt_session";
 const arr=v=>[].concat(v==null||v===""?[]:v);
 const sameName=(a,b)=>String(a||"").trim().toLowerCase()===String(b||"").trim().toLowerCase();
 const allow=p=>!!(S.user&&ROLE_PERMS[S.user.role]&&ROLE_PERMS[S.user.role][p]);
+const canAddTrainee=()=>S.user&&(S.user.role==="department"?arr(S.user.dept).some(d=>sameName(d,"HR")):allow("add"));
 const ALLBIZ=u=>u.role==="developer"||u.role==="superadmin";
 const vbiz=()=>{const u=S.user;if(!u||u.role==="trainee")return[];if(ALLBIZ(u))return BIZ;const b=arr(u.business).filter(x=>BIZ.includes(x));return b.length?b:(u.role==="department"?BIZ:[])};
 const isOwn=t=>{const u=S.user;return !!u&&((u.traineeId!=null&&+u.traineeId===t.id)||(u.trainee!=null&&sameName(u.trainee,t.name)))};
@@ -341,7 +342,7 @@ function side(t){
  const B=(p,h)=>allow(p)?h:"";
  if(!t)return `<aside class="sb">${brand}${who}
   ${S.user.role==="trainee"?"":`<label class="fl sq"><span>Search</span><input id="q" type="search" value="${esc(S.q||"")}" placeholder="Name, department, designation…" autocomplete="off"></label>`}
-  ${B("add",'<button class="p" data-a="addopen">＋ Add trainee</button>')}${B("upload",'<button data-a="uploadopen">↑ Upload video</button>')}${B("watch",'<button data-a="videoopen">▶ Watch video</button>')}${B("map",'<button data-a="mapopen">🔗 Map videos</button>')}${B("csv",'<button data-a="csv">Export CSV</button>')}
+  ${canAddTrainee()?'<button class="p" data-a="addopen">＋ Add trainee</button>':""}${B("upload",'<button data-a="uploadopen">↑ Upload video</button>')}${B("watch",'<button data-a="videoopen">▶ Watch video</button>')}${B("map",'<button data-a="mapopen">🔗 Map videos</button>')}${B("csv",'<button data-a="csv">Export CSV</button>')}
   <div class="sg"></div>
   <div class="sd"><span class="mu">Training duration</span><b>${hm(AT)}</b><span class="mu">${ST.length} steps · ${hm(VT)} of video (${VID.length} videos)</span></div>${foot}</aside>`;
  return `<aside class="sb">${brand}${who}
@@ -351,7 +352,8 @@ function side(t){
 }
 // ---- Trainee cards, filtered by the search box (name, department, designation, branch)
 const filtered=()=>{const q=(S.q||"").trim().toLowerCase();return scoped().filter(t=>(S.view==="overview"||biz(t)===S.view)&&[t.name,t.dept,t.desg,t.branch,biz(t)].some(v=>String(v||"").toLowerCase().includes(q)))};
-const emptyMsg=()=>S.user&&S.user.role==="trainee"?"No trainee record is linked to this account. Please ask your administrator to check your login.":scoped().length?"No trainees match your search.":allow("add")?"No trainees yet. Use “Add trainee” in the sidebar.":"No trainees to show yet.";
+const addDepts=()=>{const u=S.user;if(u&&u.role==="department")return DEPTS.filter(d=>sameName(d,"HR")&&arr(u.dept).some(x=>sameName(x,d)));return DEPTS};
+const emptyMsg=()=>S.user&&S.user.role==="trainee"?"No trainee record is linked to this account. Please ask your administrator to check your login.":scoped().length?"No trainees match your search.":canAddTrainee()?"No trainees yet. Use “Add trainee” in the sidebar.":"No trainees to show yet.";
 function tcards(){
  const q=(S.q||"").trim().toLowerCase(),L=filtered();
  return L.length?'<div class="gl">'+L.map(t=>{const[s,c]=status(t),l=cur(t),n=done(t);return `<div class="card item" data-a="open" data-id="${t.id}">
@@ -432,7 +434,7 @@ function list(){
 }
 // ---- Add trainee pop-up form
 function addModal(){
- return `<div class="ov" role="dialog" aria-modal="true"><div class="bd" data-a="mcancel"></div><div class="mb wide"><h2 style="margin-top:2px">Add trainee</h2><div class="fg"><label>Trainee name<input id="nm" placeholder="Full name"></label><label>Joining date<input id="jd" type="date" value="${new Date().toISOString().slice(0,10)}"></label><label>Business<select id="bz">${vbiz().map(b=>`<option${b===(S.view!=="overview"?S.view:"Magnus")?" selected":""}>${esc(b)}</option>`).join("")}</select></label><label>Branch<select id="br"><option value="">Select branch</option>${BRANCHES.map(b=>`<option>${b}</option>`).join("")}</select></label><label>Department<select id="dp">${DEPTS.map(d=>`<option>${esc(d)}</option>`).join("")}</select></label><label>Designation<input id="ds" placeholder="e.g. Trainee Counsellor"></label><label>Salary (₹ per month)<input id="sl" type="number" min="0" inputmode="numeric" placeholder="0"></label><label>Wage (₹ per day)<input id="wg" type="number" min="0" inputmode="numeric" placeholder="0"></label></div><div class="mu" style="margin-top:12px">Step 1 is assigned right now. Each next step unlocks only after the previous one is completed and verified.</div><div class="row" style="margin-top:16px;justify-content:flex-end"><button data-a="mcancel">Cancel</button><button class="p" data-a="add">Add trainee &amp; assign Step 1</button></div></div></div>`;
+ return `<div class="ov" role="dialog" aria-modal="true"><div class="bd" data-a="mcancel"></div><div class="mb wide"><h2 style="margin-top:2px">Add trainee</h2><div class="fg"><label>Trainee name<input id="nm" placeholder="Full name"></label><label>Joining date<input id="jd" type="date" value="${new Date().toISOString().slice(0,10)}"></label><label>Business<select id="bz">${vbiz().map(b=>`<option${b===(S.view!=="overview"?S.view:"Magnus")?" selected":""}>${esc(b)}</option>`).join("")}</select></label><label>Branch<select id="br"><option value="">Select branch</option>${BRANCHES.map(b=>`<option>${b}</option>`).join("")}</select></label><label>Department<select id="dp">${addDepts().map(d=>`<option>${esc(d)}</option>`).join("")}</select></label><label>Designation<input id="ds" placeholder="e.g. Trainee Counsellor"></label><label>Salary (₹ per month)<input id="sl" type="number" min="0" inputmode="numeric" placeholder="0"></label><label>Wage (₹ per day)<input id="wg" type="number" min="0" inputmode="numeric" placeholder="0"></label></div><div class="mu" style="margin-top:12px">Step 1 is assigned right now. Each next step unlocks only after the previous one is completed and verified.</div><div class="row" style="margin-top:16px;justify-content:flex-end"><button data-a="mcancel">Cancel</button><button class="p" data-a="add">Add trainee &amp; assign Step 1</button></div></div></div>`;
 }
 function detail(t){
  const l=cur(t),[s,c]=status(t);let rows="",lm=-1;const[vm,sm]=vmod(t);
@@ -465,7 +467,7 @@ document.addEventListener("click",e=>{
  const NEED={addopen:"add",add:"add",del:"del",ename:"ename",esave:"ename",uploadopen:"upload",hyremove:"hier",ver:"verify",score:"score",msave:"score",csv:"csv"};
  if(a.startsWith("acc"))return accAction(a,b);
  if(a.startsWith("map")&&!allow("map"))return;
- if(NEED[a]&&!allow(NEED[a]))return;
+ if(NEED[a]&&(NEED[a]==="add"?!canAddTrainee():!allow(NEED[a])))return;
  if(a==="open"){const o=S.t.find(x=>x.id===+b.dataset.id);if(!o||!inScope(o))return}
  if(a==="openbiz"&&!vbiz().includes(b.dataset.b))return;
  if(a==="allbiz"&&oneBiz())return;
@@ -473,7 +475,10 @@ document.addEventListener("click",e=>{
  if(a.startsWith("map")){return mapAction(a,b)}
  if(a==="hyremove")return hierRemove(b.dataset.b);
  if(a==="add"){const n=document.getElementById("nm").value.trim();if(!n)return document.getElementById("nm").focus();
-  const d=now();const g=i=>document.getElementById(i).value.trim();S.t.push({id:Date.now(),biz:g("bz")||"Magnus",name:n,dept:g("dp"),branch:g("br"),desg:g("ds"),join:g("jd"),sal:g("sl"),wage:g("wg"),start:d,logs:[{s:0,a:d}]});S.add=false}
+  const d=now(),g=i=>document.getElementById(i).value.trim(),business=g("bz"),department=g("dp");
+  if(!vbiz().includes(business)||!addDepts().some(x=>sameName(x,department)))return;
+  const dpt=addDepts().find(x=>sameName(x,department));
+  S.t.push({id:Date.now(),biz:business,name:n,dept:dpt,branch:g("br"),desg:g("ds"),join:g("jd"),sal:g("sl"),wage:g("wg"),start:d,logs:[{s:0,a:d}]});S.add=false}
  else if(a==="openbiz"){S.view=b.dataset.b;S.bv="overview";S.q=""}
  else if(a==="allbiz"){S.view="overview";S.bv="overview";S.q=""}
  else if(a==="open"){S.sel=+b.dataset.id;S.vm=null;S.modal=null;S.edit=false}

@@ -51,7 +51,8 @@ const SUBVIEWS = [
 //   developer   - everything, all businesses (incl. video upload and video mapping tools)
 //   superadmin  - all businesses, full management (add / remove trainees, verify, score, hierarchy images, export)
 //   admin       - full view of the business(es) in "business" (string, or list like ["Magnus","Alims"])
-//   department  - only the trainees of "dept" inside "business" (leave business out = that department in every business)
+//   department  - only the trainees of "dept" inside "business" (leave business out = that department in every business);
+//                 only HR department users can add trainees, and only into HR
 //   trainee     - only their own record; "trainee" must match the trainee's name (or use traineeId)
 // "business" must match a name in BUSINESSES exactly. "dept" must match a name in DEPTS.
 // NOTE: this is a front-end login. Anyone who can open the site files can read these passwords,
