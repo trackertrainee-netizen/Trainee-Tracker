@@ -87,8 +87,8 @@ const modDone=(t,mi)=>ST.every((x,i)=>x.m!==mi||t.logs.some(g=>g.vt&&g.s===i));
 function modTable(stats,t){
  const rows=stats.modules.map((module,mi)=>{
   const sc=modScore(t,mi),rm=modRemark(t,mi),ok=modDone(t,mi);
-  const scoreCell=sc!=null?`<b>${sc} / ${MAXSC}</b>`:ok?`<button class="p sm" data-a="score" data-mi="${mi}">Add score</button>`:`<span class="lk">–</span>`;
-  const remCell=sc!=null?`<div class="sp"><span>${rm?esc(rm):'<span class="lk">–</span>'}</span><button class="sm" data-a="score" data-mi="${mi}">Edit</button></div>`:`<span class="lk">–</span>`;
+  const scoreCell=sc!=null?`<b>${sc} / ${MAXSC}</b>`:ok&&allow("score")?`<button class="p sm" data-a="score" data-mi="${mi}">Add score</button>`:`<span class="lk">–</span>`;
+  const remCell=sc!=null?`<div class="sp"><span>${rm?esc(rm):'<span class="lk">–</span>'}</span>${allow("score")?`<button class="sm" data-a="score" data-mi="${mi}">Edit</button>`:""}</div>`:`<span class="lk">–</span>`;
   return `<tr><td>${module.name}</td><td><b>${hm(module.plan)}</b></td><td><b>${hm(module.taken)}</b></td><td>${module.verified}/${module.steps}</td><td>${scoreCell}</td><td>${remCell}</td></tr>`}).join("");
  return `<h2 style="margin-top:22px">Module-wise summary</h2><div class="sc"><table><tr><th>Module</th><th>Total task time</th><th>Total time taken</th><th>Verified</th><th>Score (out of ${MAXSC})</th><th>Remark</th></tr>${rows}<tr><td><b>All modules</b></td><td><b>${hm(stats.total)}</b></td><td><b>${hm(stats.taken)}</b></td><td>${stats.verifiedCount}/${stats.steps}</td><td><b id="tot-sc-row">${scoreText(t)}</b></td><td></td></tr></table></div><div class="mu">Fixed time comes from the task sheet. Time taken counts only completed steps, from Start to Mark completed. Score and remark can be added once every step of a module is verified.</div>`;
 }
@@ -121,6 +121,7 @@ function mapModal(){
  </div></div>`;
 }
 function modal(t){
+ if(S.acc)return accModal();
  if(S.map)return mapModal();
  if(S.upload)return uploadModal();
  if(S.video)return videoModal();
@@ -150,6 +151,137 @@ const mv=mi=>ST.filter(x=>x.m===mi&&x.t==="VIDEO").reduce((a,x)=>a+x.min,0);
 const BIZ=["Magnus","Alims","M&D","Merchx"];
 const biz=t=>BIZ.includes(t.biz)?t.biz:"Magnus";
 let S={t:[],sel:null,upload:false,video:false,hls:null,view:"overview",bv:"overview",map:false,vmap:{},folders:[],mb:"Magnus",mm:0,mt:null,mf:"",mplay:"",mmsg:"",mfstat:"",himg:{},hmsg:{}};
+// ---- Login / roles (front end only; accounts and permissions live in config.js)
+const SESSION_KEY="mt_session";
+const arr=v=>[].concat(v==null||v===""?[]:v);
+const sameName=(a,b)=>String(a||"").trim().toLowerCase()===String(b||"").trim().toLowerCase();
+const allow=p=>!!(S.user&&ROLE_PERMS[S.user.role]&&ROLE_PERMS[S.user.role][p]);
+const ALLBIZ=u=>u.role==="developer"||u.role==="superadmin";
+const vbiz=()=>{const u=S.user;if(!u||u.role==="trainee")return[];if(ALLBIZ(u))return BIZ;const b=arr(u.business).filter(x=>BIZ.includes(x));return b.length?b:(u.role==="department"?BIZ:[])};
+const isOwn=t=>{const u=S.user;return !!u&&((u.traineeId!=null&&+u.traineeId===t.id)||(u.trainee!=null&&sameName(u.trainee,t.name)))};
+const inScope=t=>{const u=S.user;if(!u)return false;
+ if(ALLBIZ(u))return true;
+ if(u.role==="admin")return vbiz().includes(biz(t));
+ if(u.role==="department")return vbiz().includes(biz(t))&&arr(u.dept).some(d=>sameName(d,t.dept));
+ if(u.role==="trainee")return isOwn(t);
+ return false};
+const scoped=()=>S.t.filter(inScope);
+const ownRec=()=>S.t.find(isOwn)||null;
+const oneBiz=()=>vbiz().length===1;
+const roleLabel=()=>S.user?(ROLE_LABELS[S.user.role]||S.user.role):"";
+const scopeLabel=()=>{const u=S.user;if(!u)return"";if(ALLBIZ(u))return"All businesses";
+ if(u.role==="admin")return vbiz().join(", ");
+ if(u.role==="department")return(arr(u.business).length?vbiz().join(", ")+" · ":"")+arr(u.dept).join(", ");
+ return""};
+const findUser=(n,p)=>USERS.find(u=>sameName(u.username,n)&&u.password===p);
+const initView=()=>{S.sel=null;S.vm=null;S.q="";S.bv="overview";S.modal=null;S.edit=false;S.add=false;S.upload=false;S.video=false;S.map=false;S.acc=false;S.accf=null;S.view=oneBiz()?vbiz()[0]:"overview"};
+function login(u,remember){
+ S.user=u;try{(remember?localStorage:sessionStorage).setItem(SESSION_KEY,u.username)}catch(e){}
+ initView();render();
+}
+function logout(){
+ stopVideoPlayer();stopVideoPlayer("map-player");
+ try{sessionStorage.removeItem(SESSION_KEY);localStorage.removeItem(SESSION_KEY)}catch(e){}
+ S.user=null;initView();render();
+}
+(()=>{try{const o=JSON.parse(localStorage.getItem("mt_access")||"null");if(o&&Array.isArray(o.users)&&o.users.some(u=>u.role==="developer")){USERS.splice(0,USERS.length,...o.users);Object.keys(o.perms||{}).forEach(r=>{if(r!=="developer"&&ROLE_PERMS[r])Object.assign(ROLE_PERMS[r],o.perms[r])})}}catch(e){}})();
+(()=>{let n=null;try{n=sessionStorage.getItem(SESSION_KEY)||localStorage.getItem(SESSION_KEY)}catch(e){}
+ const u=n&&USERS.find(x=>sameName(x.username,n));if(u){S.user=u;initView()}})();
+// ---- Users & permissions screen (developer). Changes are kept in this browser; "Download config.js" makes them permanent for everyone.
+const ACC_KEY="mt_access";
+const PERM_ROLES=["developer","superadmin","admin","department","trainee"];
+const accSave=()=>{try{localStorage.setItem(ACC_KEY,JSON.stringify({users:USERS,perms:ROLE_PERMS}))}catch(e){alert("Could not save the changes in this browser.")}};
+const scopeOf=u=>ALLBIZ(u)?"All businesses":u.role==="admin"?(arr(u.business).join(", ")||"–"):u.role==="department"?((arr(u.business).length?arr(u.business).join(", ")+" · ":"")+(arr(u.dept).join(", ")||"–")):(u.trainee||"–");
+function accForm(){
+ const f=S.accf;if(!f)return"";
+ const ck=(name,list,sel)=>`<div class="acc-cks">${list.map(x=>`<label class="acc-ck"><input type="checkbox" data-ck="${name}" value="${esc(x)}"${sel.includes(x)?" checked":""}> ${esc(x)}</label>`).join("")}</div>`;
+ const names=[...new Set(S.t.map(t=>t.name).filter(Boolean))],tr=f.trainee&&!names.includes(f.trainee)?[f.trainee,...names]:names;
+ return `<div class="card acc-form"><h2 style="font-size:1.125rem">${f.i<0?"Add user":"Edit user"}</h2><div class="fg"><label>Full name<input id="acc-name" value="${esc(f.name)}"></label><label>Username<input id="acc-user" value="${esc(f.username)}" autocomplete="off" autocapitalize="none"></label><label>Password<input id="acc-pass" value="${esc(f.password)}" autocomplete="off"></label><label>Role<select id="acc-role">${PERM_ROLES.map(r=>`<option value="${r}"${r===f.role?" selected":""}>${esc(ROLE_LABELS[r]||r)}</option>`).join("")}</select></label></div>`
+ +(f.role==="admin"||f.role==="department"?`<div class="fl"><span>Business${f.role==="department"?" (leave empty = every business)":""}</span>${ck("biz",BIZ,f.business)}</div>`:"")
+ +(f.role==="department"?`<div class="fl"><span>Department</span>${ck("dept",DEPTS,f.dept)}</div>`:"")
+ +(f.role==="trainee"?`<label class="fl">Trainee<select id="acc-trainee"><option value="">Select trainee</option>${tr.map(n=>`<option${n===f.trainee?" selected":""}>${esc(n)}</option>`).join("")}</select></label>`:"")
+ +`<div class="lg-err" role="alert">${esc(S.accmsg||"")}</div><div class="row" style="justify-content:flex-end"><button type="button" data-a="accformcancel">Cancel</button><button type="button" class="p" data-a="accsave">Save user</button></div></div>`;
+}
+function accModal(){
+ const head=PERM_ROLES.map(r=>`<th>${esc(ROLE_LABELS[r]||r)}</th>`).join("");
+ const rows=Object.keys(PERM_LABELS).map(p=>`<tr><td>${esc(PERM_LABELS[p])}</td>${PERM_ROLES.map(r=>`<td style="text-align:center"><input type="checkbox" class="acc-perm" data-r="${r}" data-p="${p}"${ROLE_PERMS[r]&&ROLE_PERMS[r][p]?" checked":""}${r==="developer"?" disabled":""} aria-label="${esc(PERM_LABELS[p]+" – "+(ROLE_LABELS[r]||r))}"></td>`).join("")}</tr>`).join("");
+ const urows=USERS.map((u,i)=>`<tr><td>${esc(u.name||"")}</td><td>${esc(u.username)}</td><td>${esc(ROLE_LABELS[u.role]||u.role)}</td><td>${esc(scopeOf(u))}</td><td><div class="map-act"><button type="button" class="sm" data-a="accedit" data-i="${i}">Edit</button><button type="button" class="sm dgr" data-a="accdel" data-i="${i}">Delete</button></div></td></tr>`).join("");
+ return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="acc-title"><div class="bd" data-a="acccancel"></div><div class="mb wide acc"><h2 id="acc-title">Users &amp; permissions</h2><div class="mu">Choose what each role can do, and manage the login accounts.</div>
+ <h2 style="margin:18px 0 6px;font-size:1.125rem">Permissions by role</h2><div class="sc"><table><tr><th>Permission</th>${head}</tr>${rows}</table></div><div class="mu">Developer always keeps every permission. Changes apply straight away.</div>
+ <div class="sp" style="margin:22px 0 6px"><h2 style="font-size:1.125rem;margin:0">Users</h2><button type="button" class="p sm" data-a="accadd">＋ Add user</button></div>${accForm()}<div class="sc"><table><tr><th>Name</th><th>Username</th><th>Role</th><th>Access</th><th></th></tr>${urows}</table></div>
+ <div class="mu" style="margin-top:10px">Changes are saved in this browser only. Press “Download config.js” and replace <b>static/config.js</b> on the server so every device gets them.</div>
+ <div class="row" style="margin-top:14px;justify-content:space-between"><div class="row"><button type="button" data-a="accdl">Download config.js</button><button type="button" class="dgr" data-a="accreset">Reset to config.js</button></div><button type="button" class="p" data-a="acccancel">Done</button></div></div></div>`;
+}
+function accExport(){
+ const j=v=>JSON.stringify(v,null,2);
+ const t="// Generated from Users & permissions on "+new Date().toLocaleString()+"\n// Replace static/config.js with this file to make the changes permanent for everyone.\n\n"
+  +"const DEPTS = "+j(DEPTS)+";\n\nconst BRANCHES = "+j(BRANCHES)+";\n\nconst BUSINESSES = "+j(BUSINESSES)+";\n\nconst SUBVIEWS = "+j(SUBVIEWS)+";\n\nconst ROLE_LABELS = "+j(ROLE_LABELS)+";\n\nconst PERM_LABELS = "+j(PERM_LABELS)+";\n\nconst ROLE_PERMS = "+j(ROLE_PERMS)+";\n\nconst USERS = "+j(USERS)+";\n";
+ const u=URL.createObjectURL(new Blob([t],{type:"text/javascript"})),a=document.createElement("a");a.href=u;a.download="config.js";a.click();
+}
+function accAction(a,b){
+ if(!allow("manage"))return;
+ if(a==="accopen"){S.add=false;S.edit=false;S.modal=null;S.upload=false;S.video=false;S.map=false;S.acc=true;S.accf=null;S.accmsg=""}
+ else if(a==="acccancel"){S.acc=false;S.accf=null;S.accmsg=""}
+ else if(a==="accadd"){S.accf={i:-1,name:"",username:"",password:"",role:"trainee",business:[],dept:[],trainee:""};S.accmsg=""}
+ else if(a==="accedit"){const i=+b.dataset.i,u=USERS[i];if(!u)return;S.accf={i,name:u.name||"",username:u.username,password:u.password,role:u.role,business:arr(u.business),dept:arr(u.dept),trainee:u.trainee||""};S.accmsg=""}
+ else if(a==="accformcancel"){S.accf=null;S.accmsg=""}
+ else if(a==="accdel"){
+  const i=+b.dataset.i,u=USERS[i];if(!u)return;
+  if(sameName(u.username,S.user.username))return alert("You cannot delete the account you are signed in with.");
+  if(u.role==="developer"&&USERS.filter(x=>x.role==="developer").length<2)return alert("There must be at least one developer account.");
+  if(!confirm("Delete the account \""+u.username+"\"?"))return;
+  USERS.splice(i,1);S.accf=null;accSave();
+ }
+ else if(a==="accsave"){
+  const f=S.accf;if(!f)return;const g=id=>(document.getElementById(id)||{}).value||"";
+  f.name=g("acc-name").trim();f.username=g("acc-user").trim();f.password=g("acc-pass");
+  let err="";
+  if(!f.name)err="Enter the full name.";
+  else if(!f.username)err="Enter a username.";
+  else if(/\s/.test(f.username))err="The username cannot contain spaces.";
+  else if(USERS.some((u,i)=>i!==f.i&&sameName(u.username,f.username)))err="That username is already used.";
+  else if(!f.password)err="Enter a password.";
+  else if(f.role==="admin"&&!f.business.length)err="Select at least one business for an admin.";
+  else if(f.role==="department"&&!f.dept.length)err="Select at least one department.";
+  else if(f.role==="trainee"&&!f.trainee)err="Select the trainee this account belongs to.";
+  else if(f.i>=0&&USERS[f.i].role==="developer"&&f.role!=="developer"&&USERS.filter(x=>x.role==="developer").length<2)err="There must be at least one developer account.";
+  if(err){S.accmsg=err;return render()}
+  const one=l=>l.length===1?l[0]:l,u={username:f.username,password:f.password,name:f.name,role:f.role};
+  if(f.role==="admin"||f.role==="department"){if(f.business.length)u.business=one(f.business)}
+  if(f.role==="department")u.dept=one(f.dept);
+  if(f.role==="trainee")u.trainee=f.trainee;
+  const wasMe=f.i>=0&&sameName(USERS[f.i].username,S.user.username);
+  if(f.i<0)USERS.push(u);else USERS[f.i]=u;
+  if(wasMe){S.user=u;for(const st of[sessionStorage,localStorage]){try{if(st.getItem(SESSION_KEY))st.setItem(SESSION_KEY,u.username)}catch(e){}}if(!allow("manage"))S.acc=false}
+  S.accf=null;S.accmsg="";accSave();
+ }
+ else if(a==="accdl")return accExport();
+ else if(a==="accreset"){if(!confirm("Remove the changes saved in this browser and go back to the accounts and permissions in config.js? You will be signed out."))return;try{localStorage.removeItem(ACC_KEY)}catch(e){}location.reload();return}
+ render();
+}
+document.addEventListener("input",e=>{const f=S.accf;if(!f)return;const id=e.target.id;if(id==="acc-name")f.name=e.target.value;else if(id==="acc-user")f.username=e.target.value;else if(id==="acc-pass")f.password=e.target.value});
+document.addEventListener("change",e=>{
+ const el=e.target;if(!el.classList)return;
+ if(el.classList.contains("acc-perm")){const r=el.dataset.r,p=el.dataset.p;if(r==="developer"||!allow("manage")||!ROLE_PERMS[r])return;ROLE_PERMS[r][p]=el.checked?1:0;accSave();render();return}
+ const f=S.accf;if(!f)return;
+ if(el.id==="acc-role"){f.role=el.value;S.accmsg="";render()}
+ else if(el.id==="acc-trainee")f.trainee=el.value;
+ else if(el.dataset.ck){const k=el.dataset.ck==="biz"?"business":"dept";f[k]=el.checked?[...f[k],el.value]:f[k].filter(x=>x!==el.value)}
+});
+function renderLogin(){
+ const ap=document.getElementById("app");S.lv=null;
+ if(ap.querySelector(".lgn"))return; // keep what the person has typed
+ ap.classList.remove("an");
+ ap.innerHTML=`<div class="lgn"><form class="card lgc" id="login-form"><div class="bk"><div class="lg">M</div><div><div class="brand">Magnus</div><div class="mu">Trainee Tracker</div></div></div><div><h1>Sign in</h1><div class="mu" style="margin-top:4px">Use the account given to you by your administrator.</div></div><label class="fl">Username<input id="lg-u" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required></label><label class="fl">Password<input id="lg-p" name="password" type="password" autocomplete="current-password" required></label><label class="lg-rm"><input type="checkbox" id="lg-r"> Keep me signed in on this device</label><div id="lg-e" class="lg-err" role="alert" aria-live="polite"></div><button class="p" type="submit">Sign in</button></form></div>`;
+ const u=document.getElementById("lg-u");if(u)u.focus();
+}
+document.addEventListener("submit",e=>{
+ if(e.target.id!=="login-form")return;
+ e.preventDefault();
+ const p=document.getElementById("lg-p"),er=document.getElementById("lg-e"),u=findUser(document.getElementById("lg-u").value,p.value);
+ if(!u){er.textContent="Incorrect username or password.";p.value="";p.focus();return}
+ login(u,document.getElementById("lg-r").checked);
+});
 // ---- Video map: business -> {"moduleIndex|task title": "video folder"}
 const mkey=i=>ST[i].m+"|"+ST[i].n;
 const vfolder=(b,i)=>(S.vmap[b]||{})[mkey(i)]||"";
@@ -175,18 +307,29 @@ const waiting=t=>{const g=t.logs[t.logs.length-1];return g.vt&&g.s+1<ST.length?g
 const seg=t=>'<div class="seg">'+MODS.map((m,mi)=>{const a=ST.filter(x=>x.m===mi),n=a.filter(x=>t.logs.some(g=>g.vt&&g.s===ST.indexOf(x))).length;return `<i title="${m.n}"><b style="width:${n/a.length*100}%"></b></i>`}).join("")+'</div>';
 const inr=v=>v?"₹"+Number(v).toLocaleString("en-IN"):"–";
 const jd=v=>v?new Date(v+"T00:00").toLocaleDateString([],{dateStyle:"medium"}):"–";
-const info=t=>[["Branch",esc(t.branch||"–")],["Department",esc(t.dept)],["Designation",esc(t.desg||"–")],["Joining date",jd(t.join)],["Salary / month",inr(t.sal)],["Wage / day",inr(t.wage)]];
+const info=t=>[["Branch",esc(t.branch||"–")],["Department",esc(t.dept)],["Designation",esc(t.desg||"–")],["Joining date",jd(t.join)],["Salary / month",inr(t.sal)],["Wage / day",inr(t.wage)]].filter(x=>allow("salary")||!/^(Salary|Wage)/.test(x[0]));
 const vmod=t=>{const sm=Math.max(...t.logs.map(q=>ST[q.s].m));return[S.vm==null?sm:Math.max(0,Math.min(S.vm,sm)),sm]};
 const mshort=i=>MODS[ST[i].m].n.split(" · ")[0];
 const status=t=>{const l=cur(t);return !l?(waiting(t)!=null?["Ready to start "+mshort(waiting(t)),"s-rdy"]:["Completed","ok s-done"]):l.c?["Awaiting verification","s-ver"]:l.st?["In progress","s-prog"]:["Assigned – not started","s-asg"]};
 
 // ---- Render
 function render(){
- const t=S.sel&&S.t.find(x=>x.id===S.sel);
+ if(!S.user)return renderLogin();
+ if(S.user.role==="trainee"){const o=ownRec();S.sel=o?o.id:null}
+ const t=S.sel&&S.t.find(x=>x.id===S.sel&&inScope(x));
  const ap=document.getElementById("app");
- ap.innerHTML=`<div class="shell">${side(t)}<main class="mn">${t?detail(t):list()}</main></div>`+modal(t);
- const vk=(S.sel||"list")+":"+S.vm;
- if(vk!==S.lv){S.lv=vk;ap.classList.remove("an");void ap.offsetWidth;ap.classList.add("an")}
+ const vk=(S.sel||"list")+":"+S.vm,viewChanged=vk!==S.lv;
+ if(!viewChanged)ap.classList.remove("an"); // plain refresh: new elements must not fade/slide in again (that was the blinking)
+ // Keep an open pop-up in place and only refresh its contents, so its fade/pop-in never replays (no blinking).
+ const tmp=document.createElement("div");
+ tmp.innerHTML=`<div class="shell">${side(t)}<main class="mn">${t?detail(t):list()}</main></div>`+modal(t);
+ const oldOv=ap.querySelector(":scope > .ov"),newOv=tmp.querySelector(":scope > .ov"),oldMb=oldOv&&oldOv.querySelector(".mb"),newMb=newOv&&newOv.querySelector(".mb");
+ if(oldMb&&newMb&&oldOv.getAttribute("aria-labelledby")===newOv.getAttribute("aria-labelledby")){
+  const bx=oldMb.scrollTop;
+  ap.querySelector(":scope > .shell").replaceWith(tmp.querySelector(":scope > .shell")); // pop-up node is never detached, so its animation cannot restart
+  oldMb.className=newMb.className;oldMb.innerHTML=newMb.innerHTML;oldMb.scrollTop=bx;
+ }else ap.replaceChildren(...tmp.childNodes);
+ if(viewChanged){S.lv=vk;ap.classList.remove("an");void ap.offsetWidth;ap.classList.add("an");clearTimeout(S.antm);S.antm=setTimeout(()=>ap.classList.remove("an"),1400)}
  if(S.add){const i=document.getElementById("nm");if(i)i.focus()}
  else if(t&&(S.modal!=null||S.edit)){const i=document.getElementById(S.edit?"en-nm":"ms-sc");if(i){i.focus();if(S.edit)i.select()}}
 }
@@ -194,25 +337,28 @@ function render(){
 function side(t){
  const brand=`<div class="bk"><div class="lg">M</div><div><div class="brand">Magnus</div><div class="mu">Trainee Tracker</div></div></div>`;
  const foot=`<div class="sf"><span class="mu">Theme</span>${tbtn()}</div>`;
- if(!t)return `<aside class="sb">${brand}
-  <label class="fl sq"><span>Search</span><input id="q" type="search" value="${esc(S.q||"")}" placeholder="Name, department, designation…" autocomplete="off"></label>
-  <button class="p" data-a="addopen">＋ Add trainee</button><button data-a="uploadopen">↑ Upload video</button><button data-a="videoopen">▶ Watch video</button><button data-a="mapopen">🔗 Map videos</button><button data-a="csv">Export CSV</button>
+ const who=`<div class="who"><div class="who-n">${esc(S.user.name||S.user.username)}</div><div class="mu">${esc(roleLabel())}${scopeLabel()?" · "+esc(scopeLabel()):""}</div><div class="who-b">${allow("manage")?'<button type="button" class="sm" data-a="accopen">Users &amp; permissions</button>':""}<button type="button" class="sm" data-a="logout">Sign out</button></div></div>`;
+ const B=(p,h)=>allow(p)?h:"";
+ if(!t)return `<aside class="sb">${brand}${who}
+  ${S.user.role==="trainee"?"":`<label class="fl sq"><span>Search</span><input id="q" type="search" value="${esc(S.q||"")}" placeholder="Name, department, designation…" autocomplete="off"></label>`}
+  ${B("add",'<button class="p" data-a="addopen">＋ Add trainee</button>')}${B("upload",'<button data-a="uploadopen">↑ Upload video</button>')}${B("watch",'<button data-a="videoopen">▶ Watch video</button>')}${B("map",'<button data-a="mapopen">🔗 Map videos</button>')}${B("csv",'<button data-a="csv">Export CSV</button>')}
   <div class="sg"></div>
   <div class="sd"><span class="mu">Training duration</span><b>${hm(AT)}</b><span class="mu">${ST.length} steps · ${hm(VT)} of video (${VID.length} videos)</span></div>${foot}</aside>`;
- return `<aside class="sb">${brand}
-  <button data-a="back">← All trainees</button><button data-a="uploadopen">↑ Upload video</button><button data-a="videoopen">▶ Watch video</button><button data-a="mapopen">🔗 Map videos</button><button data-a="ename">✎ Edit name</button><button class="dgr" data-a="del" data-id="${t.id}">Remove trainee</button>
+ return `<aside class="sb">${brand}${who}
+  ${S.user.role==="trainee"?"":'<button data-a="back">← All trainees</button>'}${B("upload",'<button data-a="uploadopen">↑ Upload video</button>')}${B("watch",'<button data-a="videoopen">▶ Watch video</button>')}${B("map",'<button data-a="mapopen">🔗 Map videos</button>')}${B("ename",'<button data-a="ename">✎ Edit name</button>')}${B("del",`<button class="dgr" data-a="del" data-id="${t.id}">Remove trainee</button>`)}
   <div class="sg"></div>
   <div class="sd"><span class="mu">Viewing</span><b>${esc(t.name)}</b></div>${foot}</aside>`;
 }
 // ---- Trainee cards, filtered by the search box (name, department, designation, branch)
-const filtered=()=>{const q=(S.q||"").trim().toLowerCase();return S.t.filter(t=>(S.view==="overview"||biz(t)===S.view)&&[t.name,t.dept,t.desg,t.branch,biz(t)].some(v=>String(v||"").toLowerCase().includes(q)))};
+const filtered=()=>{const q=(S.q||"").trim().toLowerCase();return scoped().filter(t=>(S.view==="overview"||biz(t)===S.view)&&[t.name,t.dept,t.desg,t.branch,biz(t)].some(v=>String(v||"").toLowerCase().includes(q)))};
+const emptyMsg=()=>S.user&&S.user.role==="trainee"?"No trainee record is linked to this account. Please ask your administrator to check your login.":scoped().length?"No trainees match your search.":allow("add")?"No trainees yet. Use “Add trainee” in the sidebar.":"No trainees to show yet.";
 function tcards(){
  const q=(S.q||"").trim().toLowerCase(),L=filtered();
  return L.length?'<div class="gl">'+L.map(t=>{const[s,c]=status(t),l=cur(t),n=done(t);return `<div class="card item" data-a="open" data-id="${t.id}">
  <div class="sp"><b>${esc(t.name)}</b><span class="chip ${c}">${s}</span></div>
  <div class="mu">${[S.view==="overview"&&q?biz(t):"",t.branch,t.dept,t.desg].filter(Boolean).map(esc).join(" · ")}${t.join?" · Joined "+jd(t.join):""}</div>
  ${seg(t)}
- <div class="mu">${n}/${ST.length} verified${l?` · Now: Step ${l.s+1} – ${esc(ST[l.s].n)}`:""}</div></div>`}).join("")+'</div>':'<div class="mu">'+(S.t.length?"No trainees match your search.":"No trainees yet. Use “Add trainee” in the sidebar.")+'</div>';
+ <div class="mu">${n}/${ST.length} verified${l?` · Now: Step ${l.s+1} – ${esc(ST[l.s].n)}`:""}</div></div>`}).join("")+'</div>':'<div class="mu">'+emptyMsg()+'</div>';
 }
 // ---- Hierarchy: Business > Branch > Department > trainees
 const groupBy=(L,f)=>{const m=new Map();L.forEach(t=>{const k=f(t);if(!m.has(k))m.set(k,[]);m.get(k).push(t)});return[...m.entries()]};
@@ -231,7 +377,7 @@ function hierarchy(){
 }
 const bstats=L=>{const aw=L.filter(t=>{const l=cur(t);return l&&l.c}).length,dn=L.filter(t=>status(t)[0]==="Completed").length;return{n:L.length,aw,dn,ip:L.length-aw-dn}};
 function bizCards(){
- return '<h2 class="bh">Businesses</h2><div class="bg">'+BIZ.map(b=>{const k=bstats(S.t.filter(t=>biz(t)===b));return `<div class="card item bz" data-a="openbiz" data-b="${esc(b)}" role="button" tabindex="0">
+ return '<h2 class="bh">Businesses</h2><div class="bg">'+vbiz().map(b=>{const k=bstats(scoped().filter(t=>biz(t)===b));return `<div class="card item bz" data-a="openbiz" data-b="${esc(b)}" role="button" tabindex="0">
   <div class="sp"><b>${esc(b)}</b></div>
   <div class="bn">${k.n}</div><div class="mu">${k.n===1?"trainee":"trainees"}</div>
   <div class="bs mu"><span>${k.ip} in progress</span><span>${k.aw} awaiting</span><span>${k.dn} completed</span></div></div>`}).join("")+'</div>';
@@ -240,16 +386,16 @@ function bizCards(){
 const HYMAX=10*1024*1024;
 const loadHier=()=>fetch("/api/hierarchy-images").then(r=>r.json()).then(d=>{if(d&&!d.error)S.himg=d}).catch(()=>{});
 function hierImages(){
- const L=S.view==="overview"?BIZ:BIZ.filter(b=>b===S.view);
+ const L=S.view==="overview"?vbiz():vbiz().filter(b=>b===S.view);
  return L.map(b=>{
   const im=S.himg[b],msg=S.hmsg[b]||"",busy=msg.endsWith("…");
   const url="/api/hierarchy-images/"+encodeURIComponent(b)+"?v="+encodeURIComponent(im?im.at:"");
-  return `<div class="card hyi"><div class="sp"><h2>${esc(b)} hierarchy</h2><div class="row">${im?`<button type="button" class="sm dgr" data-a="hyremove" data-b="${esc(b)}"${busy?" disabled":""}>Remove</button>`:""}<label class="hy-up${busy?" is-busy":""}">${im?"Replace image":"Upload image"}<input type="file" class="hy-file" data-b="${esc(b)}" accept="image/png,image/jpeg,image/gif,image/webp" hidden${busy?" disabled":""}></label></div></div>
+  return `<div class="card hyi"><div class="sp"><h2>${esc(b)} hierarchy</h2>${allow("hier")?`<div class="row">${im?`<button type="button" class="sm dgr" data-a="hyremove" data-b="${esc(b)}"${busy?" disabled":""}>Remove</button>`:""}<label class="hy-up${busy?" is-busy":""}">${im?"Replace image":"Upload image"}<input type="file" class="hy-file" data-b="${esc(b)}" accept="image/png,image/jpeg,image/gif,image/webp" hidden${busy?" disabled":""}></label></div>`:""}</div>
   ${im?`<a href="${url}" target="_blank" rel="noopener"><img class="hy-img" src="${url}" alt="${esc(b)} hierarchy"></a><div class="mu">${esc(im.name)} · ${pdfSize(im.size)} · uploaded ${fmt(im.at)}</div>`:`<div class="mu">No hierarchy image uploaded for ${esc(b)} yet.</div>`}
   ${msg?`<div class="mu" role="status" style="margin-top:6px">${esc(msg)}</div>`:""}</div>`}).join("");
 }
 async function hierUpload(inp){
- const b=inp.dataset.b,f=inp.files[0];inp.value="";if(!f)return;
+ if(!allow("hier"))return;const b=inp.dataset.b,f=inp.files[0];inp.value="";if(!f)return;
  const setMsg=m=>{S.hmsg[b]=m;if(S.bv==="hierarchy"&&!S.sel)render()};
  if(!/^image\/(png|jpeg|gif|webp)$/.test(f.type))return setMsg("Only PNG, JPG, GIF or WEBP images are allowed.");
  if(f.size>HYMAX)return setMsg("Image must be 10 MB or smaller.");
@@ -276,17 +422,17 @@ function listBody(){
  return S.view==="overview"&&!(S.q||"").trim()?bizCards():tcards();
 }
 function list(){
- const ov=S.view==="overview",k=bstats(ov?S.t:S.t.filter(t=>biz(t)===S.view));
+ const ov=S.view==="overview",k=bstats(ov?scoped():scoped().filter(t=>biz(t)===S.view));
  const st=(l,v,sub)=>`<div class="tl"><span class="mu">${l}</span><b>${v}</b><span class="mu">${sub}</span></div>`;
  const desc=ov?"Overall overview across all businesses. Open a business below to see its trainees and hierarchy.":`Follow every ${esc(S.view)} trainee through ${MODS.length} modules and ${ST.length} tasks, one verified step at a time.`;
- return `${ov?"":'<button class="bk-btn" data-a="allbiz">← All businesses</button>'}<div class="ph"><h1>${ov?"Trainees":esc(S.view)}</h1><div class="mu">${desc}</div></div>
+ return `${ov||oneBiz()?"":'<button class="bk-btn" data-a="allbiz">← All businesses</button>'}<div class="ph"><h1>${ov?"Trainees":esc(S.view)}</h1><div class="mu">${desc}</div></div>
  <label class="fl vw"><span>View</span><select id="view">${[["overview","Overview"],["hierarchy","Hierarchy"]].map(([v,n])=>`<option value="${v}"${S.bv===v?" selected":""}>${n}</option>`).join("")}</select></label>
  <div class="tg">${st("Total trainees",k.n,"enrolled")}${st("In progress",k.ip,"working through steps")}${st("Awaiting verification",k.aw,"needs a verifier")}${st("Completed",k.dn,"all steps verified")}</div>
  <div id="tl">${listBody()}</div>`;
 }
 // ---- Add trainee pop-up form
 function addModal(){
- return `<div class="ov" role="dialog" aria-modal="true"><div class="bd" data-a="mcancel"></div><div class="mb wide"><h2 style="margin-top:2px">Add trainee</h2><div class="fg"><label>Trainee name<input id="nm" placeholder="Full name"></label><label>Joining date<input id="jd" type="date" value="${new Date().toISOString().slice(0,10)}"></label><label>Business<select id="bz">${BIZ.map(b=>`<option${b===(S.view!=="overview"?S.view:"Magnus")?" selected":""}>${esc(b)}</option>`).join("")}</select></label><label>Branch<select id="br"><option value="">Select branch</option>${BRANCHES.map(b=>`<option>${b}</option>`).join("")}</select></label><label>Department<select id="dp">${DEPTS.map(d=>`<option>${esc(d)}</option>`).join("")}</select></label><label>Designation<input id="ds" placeholder="e.g. Trainee Counsellor"></label><label>Salary (₹ per month)<input id="sl" type="number" min="0" inputmode="numeric" placeholder="0"></label><label>Wage (₹ per day)<input id="wg" type="number" min="0" inputmode="numeric" placeholder="0"></label></div><div class="mu" style="margin-top:12px">Step 1 is assigned right now. Each next step unlocks only after the previous one is completed and verified.</div><div class="row" style="margin-top:16px;justify-content:flex-end"><button data-a="mcancel">Cancel</button><button class="p" data-a="add">Add trainee &amp; assign Step 1</button></div></div></div>`;
+ return `<div class="ov" role="dialog" aria-modal="true"><div class="bd" data-a="mcancel"></div><div class="mb wide"><h2 style="margin-top:2px">Add trainee</h2><div class="fg"><label>Trainee name<input id="nm" placeholder="Full name"></label><label>Joining date<input id="jd" type="date" value="${new Date().toISOString().slice(0,10)}"></label><label>Business<select id="bz">${vbiz().map(b=>`<option${b===(S.view!=="overview"?S.view:"Magnus")?" selected":""}>${esc(b)}</option>`).join("")}</select></label><label>Branch<select id="br"><option value="">Select branch</option>${BRANCHES.map(b=>`<option>${b}</option>`).join("")}</select></label><label>Department<select id="dp">${DEPTS.map(d=>`<option>${esc(d)}</option>`).join("")}</select></label><label>Designation<input id="ds" placeholder="e.g. Trainee Counsellor"></label><label>Salary (₹ per month)<input id="sl" type="number" min="0" inputmode="numeric" placeholder="0"></label><label>Wage (₹ per day)<input id="wg" type="number" min="0" inputmode="numeric" placeholder="0"></label></div><div class="mu" style="margin-top:12px">Step 1 is assigned right now. Each next step unlocks only after the previous one is completed and verified.</div><div class="row" style="margin-top:16px;justify-content:flex-end"><button data-a="mcancel">Cancel</button><button class="p" data-a="add">Add trainee &amp; assign Step 1</button></div></div></div>`;
 }
 function detail(t){
  const l=cur(t),[s,c]=status(t);let rows="",lm=-1;const[vm,sm]=vmod(t);
@@ -303,7 +449,7 @@ const nav=`<div class="navbar"><button class="gh" data-a="prev" ${vm<=0?"disable
  <h2 style="margin-top:4px"><span class="chip">${x.t}</span> ${esc(x.n)}</h2>
  <div class="mu">Duration ${x.d} · Monitored by ${x.by}</div>${x.t==="VIDEO"&&vfolder(biz(t),l.s)?`<div style="margin-top:10px"><button type="button" class="sm gh" data-a="watchstep" data-s="${l.s}">▶ Watch this video</button></div>`:""}<div style="margin-top:10px">
  ${l.c?`<div class="mu" style="margin-bottom:8px">Completed ${fmt(l.c)}.${l.pdf?` Presentation: ${pdfLink(t,l)}.`:""} ${l.s+1<ST.length&&ST[l.s+1].m!==x.m?"This is the last step of the module; the next module starts only when you press Start.":"Verification will assign the next step."}</div>
- <div class="row"><input id="vb" placeholder="Verified by (${esc(x.by)} – name)"><button class="p" data-a="ver">Verify &amp; assign next</button></div>`
+ ${allow("verify")?`<div class="row"><input id="vb" value="${esc(S.user.name||"")}" placeholder="Verified by (${esc(x.by)} – name)"><button class="p" data-a="ver">Verify &amp; assign next</button></div>`:'<div class="mu">Waiting for a verifier to review this step.</div>'}`
  :l.st?`<div class="mu" style="margin-bottom:8px">Assigned ${fmt(l.st)}</div>${needsPdf(x)?pdfUi(t,l)+(l.pdf?"":`<div class="mu" style="margin-bottom:8px">Upload your presentation (PDF) to enable completion.</div>`):""}<button class="p" data-a="cmp" ${needsPdf(x)&&!l.pdf?"disabled":""}>Mark completed now</button>`:`<div class="mu" style="margin-bottom:8px">Assigned but not started. Time is counted only from when you press Start.</div><button class="p" data-a="go">▶ Start task</button>`}</div></div>`}
  else if(waiting(t)!=null){const w=waiting(t),y=ST[w];act=`<div class="card cur"><div class="mu">${MODS[ST[w-1].m].n} finished and verified</div><h2 style="margin-top:4px">Next: ${MODS[y.m].n}</h2><div class="mu" style="margin-bottom:10px">First step: ${esc(y.n)} (${y.d}). Time is counted only from when you press Start.</div><button class="p" data-a="start">▶ Start ${mshort(w)}</button></div>`}
  else act=`<div class="card cur ok"><b>All ${ST.length} steps completed and verified 🎉</b></div>`;
@@ -315,6 +461,15 @@ const nav=`<div class="navbar"><button class="gh" data-a="prev" ${vm<=0?"disable
 // ---- Actions
 document.addEventListener("click",e=>{
  const b=e.target.closest("[data-a]");if(!b)return;const a=b.dataset.a,t=S.t.find(x=>x.id===S.sel);
+ if(a==="logout")return logout();
+ const NEED={addopen:"add",add:"add",del:"del",ename:"ename",esave:"ename",uploadopen:"upload",hyremove:"hier",ver:"verify",score:"score",msave:"score",csv:"csv"};
+ if(a.startsWith("acc"))return accAction(a,b);
+ if(a.startsWith("map")&&!allow("map"))return;
+ if(NEED[a]&&!allow(NEED[a]))return;
+ if(a==="open"){const o=S.t.find(x=>x.id===+b.dataset.id);if(!o||!inScope(o))return}
+ if(a==="openbiz"&&!vbiz().includes(b.dataset.b))return;
+ if(a==="allbiz"&&oneBiz())return;
+ if(a==="back"&&S.user.role==="trainee")return;
  if(a.startsWith("map")){return mapAction(a,b)}
  if(a==="hyremove")return hierRemove(b.dataset.b);
  if(a==="add"){const n=document.getElementById("nm").value.trim();if(!n)return document.getElementById("nm").focus();
@@ -326,7 +481,7 @@ document.addEventListener("click",e=>{
  else if(a==="del"){if(!confirm("Remove this trainee and all their records?"))return;S.t=S.t.filter(x=>x.id!==+b.dataset.id);S.sel=null}
  else if(a==="cmp"){const l=cur(t);if(needsPdf(ST[l.s])&&!l.pdf)return;l.c=now()}
  else if(a==="ver"){const v=document.getElementById("vb").value.trim();if(!v)return document.getElementById("vb").focus();
-  const l=cur(t),d=now();l.v=v;l.vt=d;if(l.s+1<ST.length&&ST[l.s+1].m===ST[l.s].m)t.logs.push({s:l.s+1,a:d});else if(modDone(t,ST[l.s].m)&&modScore(t,ST[l.s].m)==null)S.modal=ST[l.s].m}
+  const l=cur(t),d=now();l.v=v;l.vt=d;if(l.s+1<ST.length&&ST[l.s+1].m===ST[l.s].m)t.logs.push({s:l.s+1,a:d});else if(modDone(t,ST[l.s].m)&&modScore(t,ST[l.s].m)==null&&allow("score"))S.modal=ST[l.s].m}
  else if(a==="start"){if(waiting(t)!=null){const d=now();t.logs.push({s:waiting(t),a:d,st:d});S.vm=null}}
  else if(a==="go"){const l=cur(t);if(l&&!l.st)l.st=now()}
  else if(a==="prev"){S.vm=vmod(t)[0]-1}
@@ -598,22 +753,23 @@ document.addEventListener("change",e=>{
 
 function csv(){
  const r=[["Trainee","Business","Branch","Department","Designation","Joining date","Salary","Wage","Step","Module","Type","Task","Monitored by","Assigned","Completed","Verified by","Verified at"]];
- S.t.forEach(t=>t.logs.forEach(g=>{const x=ST[g.s];r.push([t.name,biz(t),t.branch||"",t.dept,t.desg||"",t.join||"",t.sal||"",t.wage||"",g.s+1,MODS[x.m].n,x.t,x.n,x.by,g.st||"",g.c||"",g.v||"",g.vt||""])}));
+ scoped().forEach(t=>t.logs.forEach(g=>{const x=ST[g.s];r.push([t.name,biz(t),t.branch||"",t.dept,t.desg||"",t.join||"",allow("salary")?(t.sal||""):"",allow("salary")?(t.wage||""):"",g.s+1,MODS[x.m].n,x.t,x.n,x.by,g.st||"",g.c||"",g.v||"",g.vt||""])}));
  const s=r.map(a=>a.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(",")).join("\n");
  const u=URL.createObjectURL(new Blob([s],{type:"text/csv"})),a=document.createElement("a");a.href=u;a.download="trainee-log.csv";a.click();
 }
 document.addEventListener("keydown",e=>{
  if((e.key==="Enter"||e.key===" ")&&e.target.classList&&(e.target.classList.contains("bz")||e.target.classList.contains("hy-t"))){e.preventDefault();e.target.click();return}
- if(e.key==="Escape"&&(S.modal!=null||S.edit||S.add||S.upload||S.video||S.map)){stopVideoPlayer();stopVideoPlayer("map-player");S.modal=null;S.edit=false;S.add=false;S.upload=false;S.video=false;S.map=false;S.mplay="";render()}
+ if(e.key==="Escape"&&(S.modal!=null||S.edit||S.add||S.upload||S.video||S.map||S.acc)){stopVideoPlayer();stopVideoPlayer("map-player");S.acc=false;S.accf=null;S.modal=null;S.edit=false;S.add=false;S.upload=false;S.video=false;S.map=false;S.mplay="";render()}
  else if(e.key==="Enter"&&S.add&&e.target.tagName==="INPUT"){const b=document.querySelector('[data-a="add"]');if(b)b.click()}
  else if(e.key==="Enter"&&e.target.id==="en-nm"){const b=document.querySelector('[data-a="esave"]');if(b)b.click()}
 });
 document.addEventListener("input",e=>{if(e.target.id==="q"){S.q=e.target.value;const l=document.getElementById("tl");if(l)l.innerHTML=listBody()}});
 // ---- Map videos modal actions
 function mapRender(){
- const box=document.querySelector(".mb"),top=box?box.scrollTop:0;
+ const box=document.querySelector(".mb"),top=box?box.scrollTop:0,fid=document.activeElement&&document.activeElement.id;
  stopVideoPlayer("map-player");render();
  const nb=document.querySelector(".mb");if(nb)nb.scrollTop=top;
+ if(fid){const el=document.getElementById(fid);if(el)el.focus({preventScroll:true})}
  if(S.mplay)playVideo(S.mplay,"map-player","map-player-status");
 }
 async function loadMapFolders(){
@@ -643,7 +799,7 @@ async function mapAction(a,b){
  }catch(err){S.mmsg=err instanceof Error?err.message:String(err)}
  mapRender();
 }
-load().then(render);loadMap().then(()=>{if(!S.map)render()});loadHier().then(()=>{if(S.bv==="hierarchy"&&!S.sel)render()});
+load().then(render);loadMap();loadHier().then(()=>{if(S.bv==="hierarchy"&&!S.sel)render()});
 
 // ---- Light / dark theme toggle (button sits in the page header; choice is remembered in this browser)
 const curTheme=()=>document.documentElement.dataset.theme||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");
