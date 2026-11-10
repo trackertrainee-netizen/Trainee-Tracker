@@ -34,6 +34,9 @@ UPLOAD_CHUNK_SIZE = 50 * 1024 * 1024
 UPLOAD_CHUNK_DIR = os.path.join(tempfile.gettempdir(), "trainee_tracker_upload_chunks")
 lock = threading.Lock()
 video_jobs = {}
+video_job_controls = {}
+video_upload_jobs = {}
+video_upload_controls = {}
 video_jobs_lock = threading.Lock()
 VIDEO_JOB_TTL = 60 * 60  # keep finished jobs for an hour
 
@@ -88,30 +91,84 @@ def _prune_video_jobs():
     with video_jobs_lock:
         for job_id in [
             key for key, job in video_jobs.items()
-            if job["status"] in ("done", "error") and job["updated"] < cutoff
+            if job["status"] in ("done", "error", "cancelled") and job["updated"] < cutoff
         ]:
             del video_jobs[job_id]
+            video_job_controls.pop(job_id, None)
+            for upload_id, mapped_job_id in list(video_upload_jobs.items()):
+                if mapped_job_id == job_id:
+                    del video_upload_jobs[upload_id]
+                    video_upload_controls.pop(upload_id, None)
 
 
-def _start_video_job(job_id, upload_dir, video_path, folder_name):
+def _update_video_job_progress(job_id, control, stage, percent):
+    with video_jobs_lock:
+        job = video_jobs[job_id]
+        status = "cancelling" if control["cancel_event"].is_set() else stage
+        job.update(status=status, percent=percent, updated=time.time())
+
+
+def _cancel_video_job(job_id):
+    with video_jobs_lock:
+        job = video_jobs.get(job_id)
+        control = video_job_controls.get(job_id)
+        if job is None or control is None:
+            return None
+        if job["status"] in ("done", "error", "cancelled"):
+            return jsonify(ok=True, status=job["status"]), 200
+        control["cancel_event"].set()
+        job.update(status="cancelling", updated=time.time())
+        process = control["process"]
+
+    if process is not None and process.poll() is None:
+        try:
+            process.terminate()
+        except OSError:
+            if process.poll() is None:
+                app.logger.exception("Could not stop video upload process")
+                return jsonify(error="Could not stop the video upload process."), 500
+
+    return jsonify(ok=True, status="cancelling"), 202
+
+
+def _set_video_job_process(control, process):
+    with video_jobs_lock:
+        control["process"] = process
+        should_stop = process is not None and control["cancel_event"].is_set()
+    if should_stop and process.poll() is None:
+        try:
+            process.terminate()
+        except OSError:
+            if process.poll() is None:
+                app.logger.exception("Could not stop video upload process")
+
+
+def _start_video_job(job_id, upload_dir, video_path, folder_name, control):
     """Keep the worker alive through graceful shutdown so temp cleanup can finish."""
     thread = threading.Thread(
         target=_run_video_job,
-        args=(job_id, upload_dir, video_path, folder_name),
+        args=(job_id, upload_dir, video_path, folder_name, control),
         daemon=False,
     )
     thread.start()
 
 
-def _run_video_job(job_id, upload_dir, video_path, folder_name):
+def _run_video_job(job_id, upload_dir, video_path, folder_name, control):
     """Background worker: convert to HLS, upload, and record progress."""
     try:
         upload_video_as_hls(
             video_path,
             folder_name,
-            progress=lambda stage, percent: _update_video_job(job_id, status=stage, percent=percent),
+            progress=lambda stage, percent: _update_video_job_progress(job_id, control, stage, percent),
+            cancel_event=control["cancel_event"],
+            on_process=lambda process: _set_video_job_process(control, process),
         )
-        _update_video_job(job_id, status="done", percent=100, playlist=f"{folder_name}/index.m3u8")
+        if control["cancel_event"].is_set():
+            _update_video_job(job_id, status="cancelled", error="Upload cancelled.")
+        else:
+            _update_video_job(job_id, status="done", percent=100, playlist=f"{folder_name}/index.m3u8")
+    except InterruptedError:
+        _update_video_job(job_id, status="cancelled", error="Upload cancelled.")
     except ValueError as exc:
         _update_video_job(job_id, status="error", error=str(exc))
     except RuntimeError as exc:
@@ -128,13 +185,20 @@ def _run_video_job(job_id, upload_dir, video_path, folder_name):
             error=f"Required program {exc.filename or 'ffmpeg or rclone'} is not available on the server",
         )
     except subprocess.CalledProcessError:
-        app.logger.exception("Video conversion or upload failed")
-        _update_video_job(job_id, status="error", error="Video conversion or upload failed. Check the server logs.")
+        if control["cancel_event"].is_set():
+            _update_video_job(job_id, status="cancelled", error="Upload cancelled.")
+        else:
+            app.logger.exception("Video conversion or upload failed")
+            _update_video_job(job_id, status="error", error="Video conversion or upload failed. Check the server logs.")
     except Exception:
-        app.logger.exception("Unexpected video upload failure")
-        _update_video_job(job_id, status="error", error="Video upload failed unexpectedly. Check the server logs.")
+        if control["cancel_event"].is_set():
+            _update_video_job(job_id, status="cancelled", error="Upload cancelled.")
+        else:
+            app.logger.exception("Unexpected video upload failure")
+            _update_video_job(job_id, status="error", error="Video upload failed unexpectedly. Check the server logs.")
     finally:
         shutil.rmtree(upload_dir, ignore_errors=True)
+        _set_video_job_process(control, None)
 
 
 @app.get("/")
@@ -305,6 +369,12 @@ def start_video_upload():
         }
         with open(os.path.join(session_dir, "metadata.json"), "w", encoding="utf-8") as f:
             json.dump(metadata, f)
+        with video_jobs_lock:
+            video_upload_controls[upload_id] = {
+                "cancel_event": threading.Event(),
+                "process": None,
+                "phase": "receiving",
+            }
     except RuntimeError as exc:
         app.logger.error("Video upload configuration error: %s", exc)
         return jsonify(error=str(exc)), 503
@@ -325,6 +395,10 @@ def upload_video_chunk(upload_id, chunk_index):
         return jsonify(error="Video upload session not found."), 404
     if metadata is None:
         return jsonify(error="Video upload session is invalid."), 400
+    with video_jobs_lock:
+        control = video_upload_controls.get(upload_id)
+    if control is not None and control["cancel_event"].is_set():
+        return jsonify(error="Video upload cancelled."), 409
     total_chunks = metadata.get("total_chunks")
     if not isinstance(total_chunks, int) or not 0 <= chunk_index < total_chunks:
         return jsonify(error="Invalid upload chunk number."), 400
@@ -342,6 +416,8 @@ def upload_video_chunk(upload_id, chunk_index):
     os.close(fd)
     try:
         chunk.save(temporary_path)
+        if control is not None and control["cancel_event"].is_set():
+            return jsonify(error="Video upload cancelled."), 409
         if os.path.getsize(temporary_path) != expected_size:
             return jsonify(error="Upload chunk has an invalid size."), 400
         try:
@@ -362,11 +438,21 @@ def complete_video_upload(upload_id):
         return jsonify(error="Video upload session not found."), 404
     if metadata is None:
         return jsonify(error="Video upload session is invalid."), 400
+    with video_jobs_lock:
+        control = video_upload_controls.setdefault(
+            upload_id,
+            {"cancel_event": threading.Event(), "process": None, "phase": "receiving"},
+        )
+        control["phase"] = "assembling"
 
     folder_name = f"{metadata['parent_folder']}/{metadata['video_folder']}"
     upload_dir = None
     try:
+        if control["cancel_event"].is_set():
+            return jsonify(error="Video upload cancelled."), 409
         for chunk_index in range(metadata["total_chunks"]):
+            if control["cancel_event"].is_set():
+                return jsonify(error="Video upload cancelled."), 409
             chunk_path = os.path.join(session_dir, f"chunk_{chunk_index:06d}")
             expected_size = min(
                 UPLOAD_CHUNK_SIZE,
@@ -383,15 +469,26 @@ def complete_video_upload(upload_id):
         video_path = os.path.join(upload_dir, "input_video")
         with open(video_path, "wb") as assembled:
             for chunk_index in range(metadata["total_chunks"]):
+                if control["cancel_event"].is_set():
+                    return jsonify(error="Video upload cancelled."), 409
                 chunk_path = os.path.join(session_dir, f"chunk_{chunk_index:06d}")
                 with open(chunk_path, "rb") as part:
-                    shutil.copyfileobj(part, assembled, length=1024 * 1024)
+                    while True:
+                        if control["cancel_event"].is_set():
+                            return jsonify(error="Video upload cancelled."), 409
+                        chunk = part.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        assembled.write(chunk)
+        if control["cancel_event"].is_set():
+            return jsonify(error="Video upload cancelled."), 409
         if os.path.getsize(video_path) != metadata["file_size"]:
             return jsonify(error="Uploaded video size does not match the selected file."), 400
 
         _prune_video_jobs()
         job_id = str(uuid.uuid4())
         with video_jobs_lock:
+            control["phase"] = "processing"
             video_jobs[job_id] = {
                 "status": "converting",
                 "percent": 0,
@@ -399,7 +496,9 @@ def complete_video_upload(upload_id):
                 "error": None,
                 "updated": time.time(),
             }
-        _start_video_job(job_id, upload_dir, video_path, folder_name)
+            video_job_controls[job_id] = control
+            video_upload_jobs[upload_id] = job_id
+        _start_video_job(job_id, upload_dir, video_path, folder_name, control)
         upload_dir = None
     except ValueError as exc:
         return jsonify(error=str(exc)), 400
@@ -419,6 +518,11 @@ def complete_video_upload(upload_id):
     finally:
         if upload_dir:
             shutil.rmtree(upload_dir, ignore_errors=True)
+        if control["cancel_event"].is_set():
+            shutil.rmtree(session_dir, ignore_errors=True)
+            with video_jobs_lock:
+                if upload_id not in video_upload_jobs:
+                    video_upload_controls.pop(upload_id, None)
 
     shutil.rmtree(session_dir, ignore_errors=True)
     return jsonify(job_id=job_id), 202
@@ -429,9 +533,24 @@ def cancel_video_upload(upload_id):
     session_dir = _upload_session_path(upload_id)
     if session_dir is None:
         return jsonify(error="Invalid video upload session."), 400
+    with video_jobs_lock:
+        job_id = video_upload_jobs.get(upload_id)
+        control = video_upload_controls.get(upload_id)
+    if job_id is not None:
+        cancellation = _cancel_video_job(job_id)
+        if cancellation is not None:
+            return cancellation
+    if control is not None:
+        control["cancel_event"].set()
+        if control["phase"] == "assembling":
+            return jsonify(ok=True, status="cancelling"), 202
     if not os.path.isdir(session_dir):
+        with video_jobs_lock:
+            video_upload_controls.pop(upload_id, None)
         return jsonify(ok=True)
-    shutil.rmtree(session_dir)
+    shutil.rmtree(session_dir, ignore_errors=True)
+    with video_jobs_lock:
+        video_upload_controls.pop(upload_id, None)
     return jsonify(ok=True)
 
 
@@ -510,6 +629,14 @@ def video_job_status(job_id):
         playlist=job["playlist"],
         error=job["error"],
     )
+
+
+@app.delete("/api/video-jobs/<job_id>")
+def cancel_video_job(job_id):
+    cancellation = _cancel_video_job(job_id)
+    if cancellation is None:
+        return jsonify(error="Video upload job not found."), 404
+    return cancellation
 
 
 def read_video_map():
@@ -661,4 +788,4 @@ def hierarchy_image(business):
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=True, use_reloader=False)

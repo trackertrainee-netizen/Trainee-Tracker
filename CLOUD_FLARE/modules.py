@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import subprocess
 import tempfile
 
@@ -120,13 +121,46 @@ def _rclone_env():
     return env
 
 
-def upload_file_to_s3(file_path, s3_key, env=None):
-    """Upload a file to the configured Cloudflare R2 bucket with rclone."""
-    subprocess.run(
-        ["rclone", "copyto", os.fspath(file_path), f"r2:{BUCKET_NAME}/{s3_key}"],
-        env=env or _rclone_env(),
-        check=True,
-    )
+def _raise_if_cancelled(cancel_event):
+    if cancel_event is not None and cancel_event.is_set():
+        raise InterruptedError("Upload cancelled.")
+
+
+def upload_directory_to_s3(directory_path, s3_path, env, progress, cancel_event=None, on_process=None):
+    """Upload a directory with one rclone process and report its transfer progress."""
+    _raise_if_cancelled(cancel_event)
+    command = [
+        "rclone", "copy", os.fspath(directory_path), f"r2:{BUCKET_NAME}/{s3_path}",
+        "--stats", "1s", "--stats-one-line", "--stats-log-level", "NOTICE",
+        "--log-level", "NOTICE",
+    ]
+    with subprocess.Popen(
+        command,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    ) as process:
+        if on_process:
+            on_process(process)
+        try:
+            for line in process.stdout:
+                _raise_if_cancelled(cancel_event)
+                line = line.rstrip()
+                match = re.search(r"\bTransferred:.*?,\s*(\d{1,3})%", line)
+                if match:
+                    progress(min(99, int(match.group(1))))
+                elif line:
+                    print(line)
+            return_code = process.wait()
+        finally:
+            if on_process:
+                on_process(None)
+
+    _raise_if_cancelled(cancel_event)
+    if return_code:
+        raise subprocess.CalledProcessError(return_code, command)
+    progress(100)
 
 
 def _can_copy_to_hls(file_path):
@@ -167,30 +201,40 @@ def _video_duration(file_path):
         return None
 
 
-def _run_ffmpeg_hls(cmd, duration, on_percent):
+def _run_ffmpeg_hls(cmd, duration, on_percent, cancel_event=None, on_process=None):
     """Run ffmpeg and report 0-100 from its -progress output."""
+    _raise_if_cancelled(cancel_event)
     with tempfile.TemporaryFile() as err_file:
         proc = subprocess.Popen(
             cmd + ["-progress", "pipe:1", "-nostats", "-loglevel", "error"],
             stdout=subprocess.PIPE, stderr=err_file, text=True,
         )
-        last = -1
-        for line in proc.stdout:
-            key, _, value = line.strip().partition("=")
-            if key in ("out_time_us", "out_time_ms") and duration and value.lstrip("-").isdigit():
-                percent = min(99, max(0, int(int(value) / 1_000_000 / duration * 100)))
-                if percent != last:
-                    last = percent
-                    on_percent(percent)
-        code = proc.wait()
-        if code != 0:
-            err_file.seek(0)
-            print(err_file.read().decode(errors="replace"))
-            raise subprocess.CalledProcessError(code, cmd[0])
+        if on_process:
+            on_process(proc)
+        try:
+            last = -1
+            for line in proc.stdout:
+                _raise_if_cancelled(cancel_event)
+                key, _, value = line.strip().partition("=")
+                if key in ("out_time_us", "out_time_ms") and duration and value.lstrip("-").isdigit():
+                    percent = min(99, max(0, int(int(value) / 1_000_000 / duration * 100)))
+                    if percent != last:
+                        last = percent
+                        on_percent(percent)
+            code = proc.wait()
+            if code != 0:
+                err_file.seek(0)
+                print(err_file.read().decode(errors="replace"))
+                _raise_if_cancelled(cancel_event)
+                raise subprocess.CalledProcessError(code, cmd[0])
+        finally:
+            if on_process:
+                on_process(None)
+    _raise_if_cancelled(cancel_event)
     on_percent(100)
 
 
-def upload_video_as_hls(file_path, folder_name, progress=None):
+def upload_video_as_hls(file_path, folder_name, progress=None, cancel_event=None, on_process=None):
     """Transcode a video to HLS and upload its playlist and segments to a custom folder.
 
     progress, if given, is called as progress(stage, percent) where stage is
@@ -198,6 +242,7 @@ def upload_video_as_hls(file_path, folder_name, progress=None):
     and percent is 0-100 within that stage.
     """
     report = progress or (lambda stage, percent: None)
+    _raise_if_cancelled(cancel_event)
     folder_name = os.fspath(folder_name).replace("\\", "/").strip("/")
     if not folder_name or any(part in ("", ".", "..") for part in folder_name.split("/")):
         raise ValueError("folder_name must be a valid folder path.")
@@ -206,7 +251,9 @@ def upload_video_as_hls(file_path, folder_name, progress=None):
     with tempfile.TemporaryDirectory(prefix="trainee_tracker_hls_") as hls_dir:
         playlist_path = os.path.join(hls_dir, "index.m3u8")
         segment_pattern = os.path.join(hls_dir, "segment_%03d.ts")
+        _raise_if_cancelled(cancel_event)
         can_copy = _can_copy_to_hls(file_path)
+        _raise_if_cancelled(cancel_event)
         codec_args = (
             ["-c:v", "copy", "-c:a", "copy"]
             if can_copy
@@ -225,19 +272,15 @@ def upload_video_as_hls(file_path, folder_name, progress=None):
             ],
             _video_duration(file_path),
             lambda percent: report("converting", percent),
+            cancel_event,
+            on_process,
         )
         report("uploading", 0)
-        segment_paths = sorted(
-            os.path.join(hls_dir, name)
-            for name in os.listdir(hls_dir)
-            if name.startswith("segment_") and name.endswith(".ts")
+        upload_directory_to_s3(
+            hls_dir,
+            folder_name,
+            env,
+            lambda percent: report("uploading", percent),
+            cancel_event,
+            on_process,
         )
-        upload_paths = segment_paths + [playlist_path]
-        total_bytes = sum(os.path.getsize(path) for path in upload_paths)
-        uploaded_bytes = 0
-        for path in upload_paths:
-            file_size = os.path.getsize(path)
-            upload_file_to_s3(path, f"{folder_name}/{os.path.basename(path)}", env)
-            os.remove(path)
-            uploaded_bytes += file_size
-            report("uploading", int(uploaded_bytes / total_bytes * 100))
