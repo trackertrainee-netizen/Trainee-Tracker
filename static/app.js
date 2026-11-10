@@ -150,6 +150,7 @@ const mv=mi=>ST.filter(x=>x.m===mi&&x.t==="VIDEO").reduce((a,x)=>a+x.min,0);
 const BIZ=["Magnus","Alims","M&D","Merchx"];
 const biz=t=>BIZ.includes(t.biz)?t.biz:"Magnus";
 let S={t:[],sel:null,upload:false,video:false,hls:null,view:"overview",bv:"overview",map:false,vmap:{},folders:[],mb:"Magnus",mm:0,mt:null,mf:"",mplay:"",mmsg:"",mfstat:"",himg:{},hmsg:{}};
+let activeVideoUpload=null;
 // ---- Video map: business -> {"moduleIndex|task title": "video folder"}
 const mkey=i=>ST[i].m+"|"+ST[i].n;
 const vfolder=(b,i)=>(S.vmap[b]||{})[mkey(i)]||"";
@@ -334,7 +335,7 @@ document.addEventListener("click",e=>{
  else if(a==="score"){S.modal=+b.dataset.mi}
  else if(a==="addopen"){S.add=true}
  else if(a==="uploadopen"){S.add=false;S.edit=false;S.modal=null;S.upload=true}
- else if(a==="uploadcancel"){S.upload=false}
+ else if(a==="uploadcancel"){cancelVideoUpload();return}
  else if(a==="parent-create-cancel"){document.getElementById("parent-create-panel").hidden=true;document.getElementById("parent-folder-status").textContent="";return}
  else if(a==="parent-create"){createParentFolder();return}
  else if(a==="videoopen"){S.add=false;S.edit=false;S.modal=null;S.upload=false;S.video=true}
@@ -481,26 +482,54 @@ function playVideo(folder,pid="video-player",sid="video-player-status"){
  hls.attachMedia(player);
 }
 
-function sendVideo(form,onProgress){
+function sendVideo(form,onProgress,active){
  return new Promise((resolve,reject)=>{
   const xhr=new XMLHttpRequest();
+  const clear=()=>{if(active.xhr===xhr)active.xhr=null};
   xhr.open("POST","/api/videos");
   xhr.responseType="text";
   xhr.upload.onprogress=e=>{if(e.lengthComputable)onProgress(e.loaded,e.total)};
   xhr.upload.onload=()=>onProgress(1,1,true);
-  xhr.onerror=()=>reject(new Error("Network error during upload."));
-  xhr.onabort=()=>reject(new Error("Upload cancelled."));
+  xhr.onerror=()=>{clear();reject(new Error("Network error during upload."))};
+  xhr.onabort=()=>{clear();reject(new Error("Upload cancelled."))};
   xhr.onload=()=>{
+   clear();
    let result={};
    try{result=JSON.parse(xhr.responseText||"{}")}catch(_){}
    if(xhr.status>=200&&xhr.status<300)resolve(result);
    else reject(new Error(result.error||"Video upload failed."));
   };
+  active.xhr=xhr;
   xhr.send(new FormData(form));
  });
 }
-async function pollVideoJob(id,onUpdate){
+async function cancelVideoUpload(){
+ const active=activeVideoUpload;
+ if(!active){S.upload=false;render();return}
+ active.cancelled=true;
+ if(active.xhr)active.xhr.abort();
+ const status=document.getElementById("video-upload-status");
+ if(status)status.textContent="Stopping upload…";
+ if(active.jobId){
+  try{
+   const response=await fetch(`/api/video-jobs/${encodeURIComponent(active.jobId)}`,{method:"DELETE"});
+   const result=await response.json().catch(()=>({}));
+   if(!response.ok)throw new Error(result.error||"The server could not stop the upload.");
+  }catch(error){
+   active.cancelled=false;
+   if(status&&status.isConnected){
+    status.textContent=`Could not stop upload: ${error instanceof Error?error.message:String(error)}`;
+    return;
+   }
+   throw error;
+  }
+ }
+ S.upload=false;
+ render();
+}
+async function pollVideoJob(id,onUpdate,active){
  for(;;){
+  if(active.cancelled)throw new Error("Upload cancelled.");
   await new Promise(r=>setTimeout(r,800));
   let job;
   try{
@@ -512,6 +541,7 @@ async function pollVideoJob(id,onUpdate){
    throw err;
   }
   onUpdate(job);
+  if(job.status==="cancelling"||job.status==="cancelled")throw new Error("Upload cancelled.");
   if(job.status==="done")return job;
   if(job.status==="error")throw new Error(job.error||"Video processing failed.");
  }
@@ -523,6 +553,8 @@ async function uploadVideo(){
  progress.hidden=false;meta.hidden=false;
  progress.classList.remove("is-converting");
  let shown=0;
+ const active={xhr:null,jobId:null,cancelled:false};
+ activeVideoUpload=active;
  const setPct=v=>{const n=Math.max(shown,Math.min(100,Math.round(v)));shown=n;bar.style.width=n+"%";progress.setAttribute("aria-valuenow",n);pct.textContent=n+"%"};
  const fmt=b=>b>=1048576?(b/1048576).toFixed(1)+" MB":Math.round(b/1024)+" KB";
  setPct(0);
@@ -541,8 +573,10 @@ async function uploadVideo(){
     phase.textContent="Uploading video to server…";
     status.textContent=`Uploading ${fmt(loaded)} of ${fmt(total)}`;
    }
-  });
+  },active);
+  if(active.cancelled)throw new Error("Upload cancelled.");
   if(result.job_id){
+   active.jobId=result.job_id;
    result=await pollVideoJob(result.job_id,job=>{
     const p=job.percent||0;
     if(job.status==="uploading"){
@@ -554,7 +588,7 @@ async function uploadVideo(){
      phase.textContent="Splitting video into HLS segments…";
      status.textContent="Converting video. Keep this page open.";
     }
-   });
+   },active);
    setPct(100);
   }
   status.classList.add("upload-status--success");
@@ -568,8 +602,11 @@ async function uploadVideo(){
   status.append(icon,message);
  }catch(error){
   status.classList.remove("upload-status--success");
-  status.textContent=`Upload failed: ${error instanceof Error?error.message:String(error)}`;
+  if(active.cancelled){
+   if(status.isConnected)status.textContent="Upload cancelled.";
+  }else status.textContent=`Upload failed: ${error instanceof Error?error.message:String(error)}`;
  }finally{
+  if(activeVideoUpload===active)activeVideoUpload=null;
   progress.hidden=true;meta.hidden=true;
   progress.classList.remove("is-converting");
   if(submit.isConnected)submit.disabled=false;

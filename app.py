@@ -852,6 +852,11 @@ def upload_video():
 
         _prune_video_jobs()
         job_id = str(uuid.uuid4())
+        control = {
+            "cancel_event": threading.Event(),
+            "process": None,
+            "phase": "processing",
+        }
         with video_jobs_lock:
             video_jobs[job_id] = {
                 "status": "converting",
@@ -860,11 +865,8 @@ def upload_video():
                 "error": None,
                 "updated": time.time(),
             }
-        threading.Thread(
-            target=_run_video_job,
-            args=(job_id, upload_dir, video_path, folder_name),
-            daemon=True,
-        ).start()
+            video_job_controls[job_id] = control
+        _start_video_job(job_id, upload_dir, video_path, folder_name, control)
         upload_dir = None  # the worker thread now owns and removes it
     except ValueError as exc:
         return jsonify(error=str(exc)), 400
