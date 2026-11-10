@@ -94,18 +94,58 @@ function modTable(stats,t){
 }
 // ---- Pop-up window asking for the module score and remark
 function uploadModal(){
- return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="upload-title"><div class="bd" data-a="uploadcancel"></div><div class="mb wide"><h2 id="upload-title">Upload video</h2><div class="mu">The video is uploaded in 50 MB parts, converted to HLS, then the HLS files are sent to Cloudflare in one batch.</div><form id="video-upload-form"><label class="fl">Video file<input id="video-file" name="video" type="file" accept="video/*" required></label><label class="fl">Parent folder<select id="video-parent-folder" name="parent_folder" required><option value="">Loading parent folders…</option></select></label><div id="parent-create-panel" hidden><label class="fl">New parent folder name<input id="new-parent-folder" type="text" placeholder="e.g. Marketing"></label><div class="row"><button type="button" data-a="parent-create-cancel">Cancel</button><button type="button" class="p" data-a="parent-create" id="parent-create-submit">Create parent folder</button></div></div><div id="parent-folder-status" class="mu" role="status" aria-live="polite"></div><label class="fl">Video folder inside parent<input id="video-folder" name="video_folder" type="text" placeholder="e.g. marketing-intro" required></label><div id="video-upload-status" class="mu upload-status" role="status" aria-live="polite"></div><div id="video-upload-progress" class="upload-progress" role="progressbar" aria-label="Video upload progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden><span class="upload-progress__bar"></span></div><div id="video-upload-meta" class="upload-meta" hidden><span id="video-upload-phase"></span><strong id="video-upload-pct">0%</strong></div><div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="uploadcancel">Cancel</button><button class="p" type="submit" id="video-upload-submit">Convert and upload</button></div></form></div></div>`;
+ return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="upload-title">
+  <div class="bd" data-a="uploadcancel"></div>
+  <div class="mb wide"><h2 id="upload-title">Upload video</h2>
+   <div class="mu">The video is split into 200 MiB parts, converted to HLS, then all HLS files are uploaded to Cloudflare together.</div>
+   <form id="video-upload-form">
+    <label class="fl">Video file<input id="video-file" name="video" type="file" accept="video/*" required></label>
+    <label class="fl">Parent folder<select id="video-parent-folder" name="parent_folder" required><option value="">Loading parent folders…</option></select></label>
+    <div id="parent-create-panel" hidden>
+     <label class="fl">New parent folder name<input id="new-parent-folder" type="text" placeholder="e.g. Marketing"></label>
+     <div class="row"><button type="button" data-a="parent-create-cancel">Cancel</button><button type="button" class="p" data-a="parent-create" id="parent-create-submit">Create parent folder</button></div>
+    </div>
+    <div id="parent-folder-status" class="mu" role="status" aria-live="polite"></div>
+    <label class="fl">Video folder inside parent<input id="video-folder" name="video_folder" type="text" placeholder="e.g. marketing-intro" required></label>
+    <div id="video-upload-status" class="mu upload-status" role="status" aria-live="polite"></div>
+    <div id="video-upload-progress" class="upload-progress" role="progressbar" aria-label="Video upload progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden><span class="upload-progress__bar"></span></div>
+    <div id="video-upload-meta" class="upload-meta" hidden><span id="video-upload-phase"></span><strong id="video-upload-pct">0%</strong></div>
+    <div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="uploadcancel">Cancel</button><button class="p" type="submit" id="video-upload-submit">Convert and upload</button></div>
+   </form>
+  </div>
+ </div>`;
 }
 function videoModal(){
- return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="video-title"><div class="bd" data-a="videocancel"></div><div class="mb wide"><h2 id="video-title">${esc(S.vt||"Watch video")}</h2>${S.vf?"":`<label class="fl">Video folder<select id="video-library-folder"><option value="">Loading folders…</option></select></label>`}<div id="video-player-status" class="mu video-player-status${S.vf?" vhide":""}" role="status" aria-live="polite"></div><video id="video-player" class="video-player" controls playsinline preload="metadata" hidden></video>${S.vf?"":`<div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="videocancel">Close</button></div>`}</div></div>`;
+ return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="video-title"><div class="bd" data-a="videocancel"></div><div class="mb wide"><h2 id="video-title">Watch video</h2><label class="fl">Video folder<select id="video-library-folder"><option value="">Loading folders…</option></select></label><div id="video-player-status" class="mu video-player-status" role="status" aria-live="polite"></div><video id="video-player" class="video-player" controls playsinline preload="metadata" hidden></video><div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="videocancel">Close</button></div></div></div>`;
+}
+function mapModal(){
+ const vs=mvideos(S.mm);
+ if(S.mt==null||!vs.some(o=>o.i===S.mt))S.mt=vs.length?vs[0].i:null;
+ if(S.mt!=null&&!S.mfTouched)S.mf=vfolder(S.mb,S.mt);
+ const mapped=S.vmap[S.mb]||{};
+ const rows=Object.entries(mapped).map(([k,f])=>{const i=ST.findIndex((_,j)=>mkey(j)===k);return{k,f,i}}).sort((a,b)=>(a.i<0?9999:a.i)-(b.i<0?9999:b.i)).map(r=>{
+  const x=r.i>=0?ST[r.i]:null,title=x?x.n:r.k.split("|").slice(1).join("|"),mod=x?MODS[x.m].n.split(" · ")[0]:"–";
+  return `<tr><td>${r.i>=0?r.i+1:"–"}</td><td>${esc(mod)}</td><td>${esc(title)}</td><td>${esc(r.f)}</td><td><div class="map-act"><button type="button" class="sm" data-a="mapplay" data-f="${esc(r.f)}">▶ Play</button><button type="button" class="sm dgr" data-a="mapremove" data-k="${esc(r.k)}">Remove</button></div></td></tr>`}).join("");
+ const folders=S.mf&&!S.folders.includes(S.mf)?[S.mf,...S.folders]:S.folders;
+ return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="map-title"><div class="bd" data-a="mapcancel"></div><div class="mb wide"><h2 id="map-title">Map videos to tasks</h2><div class="mu" style="margin:10px 0 14px">Pick the business, module and task, then choose the video folder that should play there.</div>
+ <div class="fl"><span>Business</span><div class="pills">${BIZ.map(b=>`<button type="button" class="pill${b===S.mb?" on":""}" data-a="mapbiz" data-b="${esc(b)}">${esc(b)}</button>`).join("")}</div></div>
+ <label class="fl">Module<select id="map-module">${MODS.map((m,i)=>`<option value="${i}"${i===S.mm?" selected":""}>${esc(m.n)}</option>`).join("")}</select></label>
+ <label class="fl">Task<select id="map-task"${vs.length?"":" disabled"}>${vs.length?vs.map(o=>`<option value="${o.i}"${o.i===S.mt?" selected":""}>${o.i+1}. [VIDEO] ${esc(o.x.n)}${vfolder(S.mb,o.i)?" ✓ mapped":""}</option>`).join(""):'<option>No video tasks in this module</option>'}</select></label>
+ <label class="fl">Video (playing location)<select id="map-folder"><option value="">${S.mfstat?esc(S.mfstat):"Select a video folder"}</option>${folders.map(f=>`<option value="${esc(f)}"${f===S.mf?" selected":""}>${esc(f)}</option>`).join("")}</select></label>
+ <div id="map-msg" class="mu" role="status" aria-live="polite" style="min-height:1.4em;margin-top:8px">${esc(S.mmsg)}</div>
+ <div class="row" style="margin-top:8px;justify-content:flex-end"><button type="button" data-a="mapcancel">Close</button><button type="button" class="p" data-a="mapsave"${S.mt!=null&&S.mf?"":" disabled"}>Save mapping</button></div>
+ <h2 style="margin:22px 0 6px;font-size:1.25rem">Mapped for ${esc(S.mb)}</h2>
+ ${S.mplay?`<div id="map-player-status" class="mu video-player-status" role="status" aria-live="polite"></div><video id="map-player" class="video-player" controls playsinline preload="metadata" hidden></video><div class="row" style="margin:8px 0 12px;justify-content:flex-end"><button type="button" class="sm" data-a="mapstop">Close player</button></div>`:""}
+ ${rows?`<div class="sc"><table><tr><th>#</th><th>Module</th><th>Task</th><th>Video folder</th><th></th></tr>${rows}</table></div>`:'<div class="mu">No videos mapped for this business yet.</div>'}
+ </div></div>`;
 }
 function modal(t){
- if(S.mp)return mapModal();
+ if(S.map)return mapModal();
  if(S.upload)return uploadModal();
  if(S.video)return videoModal();
  if(S.add)return addModal();
  if(!t)return"";
- if(S.edit)return `<div class="ov" role="dialog" aria-modal="true"><div class="bd" data-a="mcancel"></div><div class="mb"><h2 style="margin-top:2px">Edit trainee</h2><label class="fl">Trainee name<input id="en-nm" type="text" value="${esc(t.name)}" placeholder="Full name"></label><label class="fl">Business<select id="en-bz">${BUSINESSES.map(b=>`<option${b===bizOf(t)?" selected":""}>${esc(b)}</option>`).join("")}</select></label><div class="row" style="margin-top:16px;justify-content:flex-end"><button data-a="mcancel">Cancel</button><button class="p" data-a="esave">Save</button></div></div></div>`;
+ if(S.edit)return `<div class="ov" role="dialog" aria-modal="true"><div class="bd" data-a="mcancel"></div><div class="mb"><h2 style="margin-top:2px">Edit trainee name</h2><label class="fl">Trainee name<input id="en-nm" type="text" value="${esc(t.name)}" placeholder="Full name"></label><div class="row" style="margin-top:16px;justify-content:flex-end"><button data-a="mcancel">Cancel</button><button class="p" data-a="esave">Save</button></div></div></div>`;
  if(S.modal==null)return"";
  const mi=S.modal,sc=modScore(t,mi);
  return `<div class="ov" role="dialog" aria-modal="true"><div class="bd" data-a="mcancel"></div><div class="mb"><div class="mu">${esc(t.name)}</div><h2 style="margin-top:2px">${MODS[mi].n} completed 🎉</h2><div class="mu" style="margin-bottom:14px">Add the score and remark for this module.</div><label class="fl">Score (out of ${MAXSC})<input id="ms-sc" type="number" min="0" max="${MAXSC}" step="0.5" inputmode="decimal" value="${sc==null?"":sc}"></label><label class="fl">Remark<textarea id="ms-rm" rows="3" placeholder="Feedback on this module">${esc(modRemark(t,mi))}</textarea></label><div class="row" style="margin-top:16px;justify-content:flex-end"><button data-a="mcancel">Later</button><button class="p" data-a="msave">Save</button></div></div></div>`;
@@ -126,15 +166,14 @@ const VID=ST.filter(x=>x.t==="VIDEO"),VT=VID.reduce((a,x)=>a+x.min,0),AT=ST.redu
 const mv=mi=>ST.filter(x=>x.m===mi&&x.t==="VIDEO").reduce((a,x)=>a+x.min,0);
 
 // ---- State
-let S={t:[],sel:null,upload:false,video:false,hls:null,biz:"All",sub:SUBVIEWS[0],mp:null,hier:{},vmap:{},folders:[],vf:"",vt:""};
+let S={t:[],sel:null,upload:false,video:false,hls:null,biz:"All",sub:SUBVIEWS[0],mp:null,hier:{},vmap:{},folders:[],vf:"",vt:"",view:"overview",bv:"overview",q:"",himg:{},hmsg:{},map:false,mb:BUSINESSES[0],mm:0,mt:null,mf:"",mfTouched:false,mmsg:"",mplay:"",vpre:""};
 let activeVideoUpload=null;
 // ---- Business + video mapping helpers. Mapping is stored on the server (video_map.json) as
 // { "<business>": { "<module index>|<task name>": "<parent folder>/<video folder>" } }
-const bizOf=t=>t.biz||BUSINESSES[0];
-const vis=()=>S.t.filter(t=>S.biz==="All"||bizOf(t)===S.biz);
+const BIZ=BUSINESSES;
+const biz=t=>t.biz||BUSINESSES[0];
 const vkey=i=>ST[i].m+"|"+ST[i].n;
 const mapped=(biz,i)=>((S.vmap[biz]||{})[vkey(i)])||"";
-const loadHier=()=>fetch("/api/hierarchy").then(r=>r.json()).then(d=>{S.hier=d&&typeof d==="object"&&!Array.isArray(d)?d:{}}).catch(()=>{});
 const loadMap=()=>fetch("/api/video-map").then(r=>r.json()).then(d=>{S.vmap=d&&typeof d==="object"&&!Array.isArray(d)?d:{}}).catch(()=>{});
 const saveMap=()=>fetch("/api/video-map",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(S.vmap)}).then(r=>{if(!r.ok)throw new Error("save failed")}).catch(()=>alert("Could not save the video mapping. Is app.py running?"));
 // Data is stored on the Python server (data.json) through /api/trainees
@@ -146,11 +185,18 @@ const fmt=i=>i?new Date(i).toLocaleString([], {dateStyle:"medium",timeStyle:"sho
 const took=(a,b)=>{if(!a||!b)return"–";const m=Math.round((new Date(b)-new Date(a))/60000);return m>=60?Math.floor(m/60)+" h "+m%60+" m":m+" m"};
 const done=t=>t.logs.filter(l=>l.vt).length;
 const cur=t=>{const l=t.logs[t.logs.length-1];return l.vt?null:l};
+const needsPdf=x=>x.t==="PRE"||(x.t==="TASK"&&/presentation/i.test(x.n));
+const PDFMAX=25*1024*1024;
+const pdfSize=b=>b>=1048576?(b/1048576).toFixed(1)+" MB":Math.max(1,Math.round(b/1024))+" KB";
+const pdfLink=(t,l)=>`<a class="pdf-link" href="/api/presentations/${t.id}/${l.s}" target="_blank" rel="noopener">${esc(l.pdf.n)}</a>`;
+const pdfUi=(t,l)=>l.pdf
+ ?`<div class="pdf-box"><span class="pdf-ico">PDF</span><div class="pdf-meta">${pdfLink(t,l)}<div class="mu">${pdfSize(l.pdf.sz)} · uploaded ${fmt(l.pdf.at)}</div></div><label class="pdf-replace">Replace<input type="file" id="pdf-file" accept="application/pdf,.pdf" hidden></label></div><div id="pdf-status" class="mu" role="status"></div>`
+ :`<div class="pdf-box pdf-empty"><div class="pdf-meta"><b>Upload your presentation (PDF)</b><div class="mu">PDF files only · up to 25 MB</div></div><input type="file" id="pdf-file" accept="application/pdf,.pdf"></div><div id="pdf-status" class="mu" role="status"></div>`;
 const waiting=t=>{const g=t.logs[t.logs.length-1];return g.vt&&g.s+1<ST.length?g.s+1:null};
 const seg=t=>'<div class="seg">'+MODS.map((m,mi)=>{const a=ST.filter(x=>x.m===mi),n=a.filter(x=>t.logs.some(g=>g.vt&&g.s===ST.indexOf(x))).length;return `<i title="${m.n}"><b style="width:${n/a.length*100}%"></b></i>`}).join("")+'</div>';
 const inr=v=>v?"₹"+Number(v).toLocaleString("en-IN"):"–";
 const jd=v=>v?new Date(v+"T00:00").toLocaleDateString([],{dateStyle:"medium"}):"–";
-const info=t=>[["Business",esc(bizOf(t))],["Branch",esc(t.branch||"–")],["Department",esc(t.dept)],["Designation",esc(t.desg||"–")],["Joining date",jd(t.join)],["Salary / month",inr(t.sal)],["Wage / day",inr(t.wage)]];
+const info=t=>[["Branch",esc(t.branch||"–")],["Department",esc(t.dept)],["Designation",esc(t.desg||"–")],["Joining date",jd(t.join)],["Salary / month",inr(t.sal)],["Wage / day",inr(t.wage)]];
 const vmod=t=>{const sm=Math.max(...t.logs.map(q=>ST[q.s].m));return[S.vm==null?sm:Math.max(0,Math.min(S.vm,sm)),sm]};
 const mshort=i=>MODS[ST[i].m].n.split(" · ")[0];
 const status=t=>{const l=cur(t);return !l?(waiting(t)!=null?["Ready to start "+mshort(waiting(t)),"s-rdy"]:["Completed","ok s-done"]):l.c?["Awaiting verification","s-ver"]:l.st?["In progress","s-prog"]:["Assigned – not started","s-asg"]};
@@ -175,37 +221,93 @@ function side(t){
   <div class="sg"></div>
   <div class="sd"><span class="mu">Training duration</span><b>${hm(AT)}</b><span class="mu">${ST.length} steps · ${hm(VT)} of video (${VID.length} videos)</span></div>${foot}</aside>`;
  return `<aside class="sb">${brand}
-  <button data-a="back">← All trainees</button><button data-a="uploadopen">↑ Upload video</button><button data-a="videoopen">▶ Watch video</button><button data-a="mapopen">🔗 Map videos</button><button data-a="ename">✎ Edit trainee</button><button class="dgr" data-a="del" data-id="${t.id}">Remove trainee</button>
+  <button data-a="back">← All trainees</button><button data-a="uploadopen">↑ Upload video</button><button data-a="videoopen">▶ Watch video</button><button data-a="mapopen">🔗 Map videos</button><button data-a="ename">✎ Edit name</button><button class="dgr" data-a="del" data-id="${t.id}">Remove trainee</button>
   <div class="sg"></div>
   <div class="sd"><span class="mu">Viewing</span><b>${esc(t.name)}</b></div>${foot}</aside>`;
 }
 // ---- Trainee cards, filtered by the search box (name, department, designation, branch)
+const filtered=()=>{const q=(S.q||"").trim().toLowerCase();return S.t.filter(t=>(S.view==="overview"||biz(t)===S.view)&&[t.name,t.dept,t.desg,t.branch,biz(t)].some(v=>String(v||"").toLowerCase().includes(q)))};
 function tcards(){
- const q=(S.q||"").trim().toLowerCase();
- if(S.biz==="All"&&!q)return "";
- const L=vis().filter(t=>[t.name,t.dept,t.desg,t.branch,bizOf(t)].some(v=>String(v||"").toLowerCase().includes(q)));
+ const q=(S.q||"").trim().toLowerCase(),L=filtered();
  return L.length?'<div class="gl">'+L.map(t=>{const[s,c]=status(t),l=cur(t),n=done(t);return `<div class="card item" data-a="open" data-id="${t.id}">
  <div class="sp"><b>${esc(t.name)}</b><span class="chip ${c}">${s}</span></div>
- <div class="mu">${[bizOf(t),t.branch,t.dept,t.desg].filter(Boolean).map(esc).join(" · ")}${t.join?" · Joined "+jd(t.join):""}</div>
+ <div class="mu">${[S.view==="overview"&&q?biz(t):"",t.branch,t.dept,t.desg].filter(Boolean).map(esc).join(" · ")}${t.join?" · Joined "+jd(t.join):""}</div>
  ${seg(t)}
- <div class="mu">${n}/${ST.length} verified${l?` · Now: Step ${l.s+1} – ${esc(ST[l.s].n)}`:""}</div></div>`}).join("")+'</div>':'<div class="mu">'+(S.t.length?"No trainees match the current filters.":"No trainees yet. Use “Add trainee” in the sidebar.")+'</div>';
+ <div class="mu">${n}/${ST.length} verified${l?` · Now: Step ${l.s+1} – ${esc(ST[l.s].n)}`:""}</div></div>`}).join("")+'</div>':'<div class="mu">'+(S.t.length?"No trainees match your search.":"No trainees yet. Use “Add trainee” in the sidebar.")+'</div>';
 }
-const cnts=L=>{const n=L.length,aw=L.filter(t=>{const l=cur(t);return l&&l.c}).length,dn=L.filter(t=>status(t)[0]==="Completed").length;return{n,aw,dn,ip:n-aw-dn}};
-// Home (Business = All): overall overview on top, one card per business below.
-// Business page: that business's overview tiles and trainees (Hierarchy is the other View).
+// ---- Hierarchy: Business > Branch > Department > trainees
+const groupBy=(L,f)=>{const m=new Map();L.forEach(t=>{const k=f(t);if(!m.has(k))m.set(k,[]);m.get(k).push(t)});return[...m.entries()]};
+function hierTrainees(L){
+ return '<div class="hy-ts">'+L.map(t=>{const[s,c]=status(t);return `<div class="hy-t item" data-a="open" data-id="${t.id}" role="button" tabindex="0"><b>${esc(t.name)}</b><span class="mu">${esc(t.desg||"No designation")}</span><span class="chip ${c}">${s}</span></div>`}).join("")+'</div>';
+}
+function hierBranches(L){
+ return groupBy(L,t=>t.branch||"No branch").map(([br,bl])=>`<div class="hy-br"><div class="hy-h"><b>${esc(br)}</b><span class="mu">${bl.length} ${bl.length===1?"trainee":"trainees"}</span></div>`+
+  groupBy(bl,t=>t.dept||"No department").map(([dp,dl])=>`<div class="hy-d"><div class="hy-h"><b>${esc(dp)}</b><span class="mu">${dl.length}</span></div>${hierTrainees(dl)}</div>`).join("")+'</div>').join("");
+}
+function hierarchy(){
+ const L=filtered();
+ if(!L.length)return '<div class="mu">'+(S.t.length?"No trainees match your search.":"No trainees yet. Use “Add trainee” in the sidebar.")+'</div>';
+ if(S.view!=="overview")return '<div class="card hy">'+hierBranches(L)+'</div>';
+ return BIZ.map(b=>{const bl=L.filter(t=>biz(t)===b);return bl.length?`<div class="card hy"><div class="hy-h hy-top"><h2>${esc(b)}</h2><span class="mu">${bl.length} ${bl.length===1?"trainee":"trainees"}</span></div>${hierBranches(bl)}</div>`:""}).join("");
+}
+const bstats=L=>{const aw=L.filter(t=>{const l=cur(t);return l&&l.c}).length,dn=L.filter(t=>status(t)[0]==="Completed").length;return{n:L.length,aw,dn,ip:L.length-aw-dn}};
+function bizCards(){
+ return '<h2 class="bh">Businesses</h2><div class="bg">'+BIZ.map(b=>{const k=bstats(S.t.filter(t=>biz(t)===b));return `<div class="card item bz" data-a="openbiz" data-b="${esc(b)}" role="button" tabindex="0">
+  <div class="sp"><b>${esc(b)}</b><span class="mu">Open ›</span></div>
+  <div class="bn">${k.n}</div><div class="mu">${k.n===1?"trainee":"trainees"}</div>
+  <div class="bs mu"><span>${k.ip} in progress</span><span>${k.aw} awaiting</span><span>${k.dn} completed</span></div></div>`}).join("")+'</div>';
+}
+// ---- Hierarchy images (one per business, stored in the bucket)
+const HYMAX=10*1024*1024;
+const loadHier=()=>fetch("/api/hierarchy-images").then(r=>r.json()).then(d=>{if(d&&!d.error)S.himg=d}).catch(()=>{});
+function hierImages(){
+ const L=S.view==="overview"?BIZ:BIZ.filter(b=>b===S.view);
+ return L.map(b=>{
+  const im=S.himg[b],msg=S.hmsg[b]||"",busy=msg.endsWith("…");
+  const url="/api/hierarchy-images/"+encodeURIComponent(b)+"?v="+encodeURIComponent(im?im.at:"");
+  return `<div class="card hyi"><div class="sp"><h2>${esc(b)} hierarchy</h2><div class="row">${im?`<button type="button" class="sm dgr" data-a="hyremove" data-b="${esc(b)}"${busy?" disabled":""}>Remove</button>`:""}<label class="hy-up${busy?" is-busy":""}">${im?"Replace image":"Upload image"}<input type="file" class="hy-file" data-b="${esc(b)}" accept="image/png,image/jpeg,image/gif,image/webp" hidden${busy?" disabled":""}></label></div></div>
+  ${im?`<a href="${url}" target="_blank" rel="noopener"><img class="hy-img" src="${url}" alt="${esc(b)} hierarchy"></a><div class="mu">${esc(im.name)} · ${pdfSize(im.size)} · uploaded ${fmt(im.at)}</div>`:`<div class="mu">No hierarchy image uploaded for ${esc(b)} yet.</div>`}
+  ${msg?`<div class="mu" role="status" style="margin-top:6px">${esc(msg)}</div>`:""}</div>`}).join("");
+}
+async function hierUpload(inp){
+ const b=inp.dataset.b,f=inp.files[0];inp.value="";if(!f)return;
+ const setMsg=m=>{S.hmsg[b]=m;if(S.bv==="hierarchy"&&!S.sel)render()};
+ if(!/^image\/(png|jpeg|gif|webp)$/.test(f.type))return setMsg("Only PNG, JPG, GIF or WEBP images are allowed.");
+ if(f.size>HYMAX)return setMsg("Image must be 10 MB or smaller.");
+ setMsg("Uploading…");
+ try{
+  const fd=new FormData();fd.append("business",b);fd.append("file",f);
+  const r=await fetch("/api/hierarchy-images",{method:"POST",body:fd}),d=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error(d.error||"Upload failed.");
+  S.himg=d;setMsg("");
+ }catch(err){setMsg(err instanceof Error?err.message:String(err))}
+}
+async function hierRemove(b){
+ if(!confirm("Remove the "+b+" hierarchy image?"))return;
+ S.hmsg[b]="Removing…";render();
+ try{
+  const r=await fetch("/api/hierarchy-images/"+encodeURIComponent(b),{method:"DELETE"}),d=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error(d.error||"Could not remove the image.");
+  S.himg=d;S.hmsg[b]="";
+ }catch(err){S.hmsg[b]=err instanceof Error?err.message:String(err)}
+ render();
+}
+function listBody(){
+ if(S.bv==="hierarchy")return hierImages();
+ return S.view==="overview"&&!(S.q||"").trim()?bizCards():tcards();
+}
 function list(){
- if(S.sub==="Hierarchy")return hierPage();
- const all=S.biz==="All",c=cnts(vis());
+ const ov=S.view==="overview",k=bstats(ov?S.t:S.t.filter(t=>biz(t)===S.view));
  const st=(l,v,sub)=>`<div class="tl"><span class="mu">${l}</span><b>${v}</b><span class="mu">${sub}</span></div>`;
- const tiles=`<div class="tg">${st("Total trainees",c.n,"enrolled")}${st("In progress",c.ip,"working through steps")}${st("Awaiting verification",c.aw,"needs a verifier")}${st("Completed",c.dn,"all steps verified")}</div>`;
- const head=all?`<div class="ph"><h1>Trainees</h1><div class="mu">Overall overview across all businesses. Open a business below to see its trainees and hierarchy.</div></div>`
-  :`<div class="ph"><button class="gh sm" data-a="bizopen" data-v="All">← All businesses</button><h1 style="margin-top:0.5rem">${esc(S.biz)}</h1><div class="mu">Follow every ${esc(S.biz)} trainee through ${MODS.length} modules and ${ST.length} tasks, one verified step at a time.</div></div>`;
- const cards=all?`<h2 style="margin-top:0.5rem">Businesses</h2><div class="bg">${BUSINESSES.map(b=>{const x=cnts(S.t.filter(t=>bizOf(t)===b));return `<div class="card item bz" data-a="bizopen" data-v="${esc(b)}"><div class="sp"><b>${esc(b)}</b><span class="mu">Open ›</span></div><div class="bn">${x.n}</div><div class="mu">trainee${x.n===1?"":"s"}</div><div class="bm"><span>${x.ip} in progress</span><span>${x.aw} awaiting</span><span>${x.dn} completed</span></div></div>`}).join("")}</div>`:"";
- return `${head}${slicers()}${tiles}${cards}<div id="tl">${tcards()}</div>`;
+ const desc=ov?"Overall overview across all businesses. Open a business below to see its trainees and hierarchy.":`Follow every ${esc(S.view)} trainee through ${MODS.length} modules and ${ST.length} tasks, one verified step at a time.`;
+ return `${ov?"":'<button class="bk-btn" data-a="allbiz">← All businesses</button>'}<div class="ph"><h1>${ov?"Trainees":esc(S.view)}</h1><div class="mu">${desc}</div></div>
+ <label class="fl vw"><span>View</span><select id="view">${[["overview","Overview"],["hierarchy","Hierarchy"]].map(([v,n])=>`<option value="${v}"${S.bv===v?" selected":""}>${n}</option>`).join("")}</select></label>
+ <div class="tg">${st("Total trainees",k.n,"enrolled")}${st("In progress",k.ip,"working through steps")}${st("Awaiting verification",k.aw,"needs a verifier")}${st("Completed",k.dn,"all steps verified")}</div>
+ <div id="tl">${listBody()}</div>`;
 }
 // ---- Add trainee pop-up form
 function addModal(){
- return `<div class="ov" role="dialog" aria-modal="true"><div class="bd" data-a="mcancel"></div><div class="mb wide"><h2 style="margin-top:2px">Add trainee</h2><div class="fg"><label>Trainee name<input id="nm" placeholder="Full name"></label><label>Joining date<input id="jd" type="date" value="${new Date().toISOString().slice(0,10)}"></label><label>Business<select id="bz">${BUSINESSES.map(b=>`<option${b===(S.biz==="All"?BUSINESSES[0]:S.biz)?" selected":""}>${esc(b)}</option>`).join("")}</select></label><label>Branch<select id="br"><option value="">Select branch</option>${BRANCHES.map(b=>`<option>${b}</option>`).join("")}</select></label><label>Department<select id="dp">${DEPTS.map(d=>`<option>${esc(d)}</option>`).join("")}</select></label><label>Designation<input id="ds" placeholder="e.g. Trainee Counsellor"></label><label>Salary (₹ per month)<input id="sl" type="number" min="0" inputmode="numeric" placeholder="0"></label><label>Wage (₹ per day)<input id="wg" type="number" min="0" inputmode="numeric" placeholder="0"></label></div><div class="mu" style="margin-top:12px">Step 1 is assigned right now. Each next step unlocks only after the previous one is completed and verified.</div><div class="row" style="margin-top:16px;justify-content:flex-end"><button data-a="mcancel">Cancel</button><button class="p" data-a="add">Add trainee &amp; assign Step 1</button></div></div></div>`;
+ return `<div class="ov" role="dialog" aria-modal="true"><div class="bd" data-a="mcancel"></div><div class="mb wide"><h2 style="margin-top:2px">Add trainee</h2><div class="fg"><label>Trainee name<input id="nm" placeholder="Full name"></label><label>Joining date<input id="jd" type="date" value="${new Date().toISOString().slice(0,10)}"></label><label>Business<select id="bz">${BIZ.map(b=>`<option${b===(S.view!=="overview"?S.view:"Magnus")?" selected":""}>${esc(b)}</option>`).join("")}</select></label><label>Branch<select id="br"><option value="">Select branch</option>${BRANCHES.map(b=>`<option>${b}</option>`).join("")}</select></label><label>Department<select id="dp">${DEPTS.map(d=>`<option>${esc(d)}</option>`).join("")}</select></label><label>Designation<input id="ds" placeholder="e.g. Trainee Counsellor"></label><label>Salary (₹ per month)<input id="sl" type="number" min="0" inputmode="numeric" placeholder="0"></label><label>Wage (₹ per day)<input id="wg" type="number" min="0" inputmode="numeric" placeholder="0"></label></div><div class="mu" style="margin-top:12px">Step 1 is assigned right now. Each next step unlocks only after the previous one is completed and verified.</div><div class="row" style="margin-top:16px;justify-content:flex-end"><button data-a="mcancel">Cancel</button><button class="p" data-a="add">Add trainee &amp; assign Step 1</button></div></div></div>`;
 }
 function detail(t){
  const l=cur(t),[s,c]=status(t);let rows="",lm=-1;const[vm,sm]=vmod(t);
@@ -214,16 +316,16 @@ function detail(t){
   if(x.m!==lm){lm=x.m;const f0=t.logs.find(q=>ST[q.s].m===lm);rows+=`<tr class="mod"><td colspan="10">${MODS[lm].n} <span class="mu">· ${f0?"Started "+fmt(f0.a):"Not started"}</span> <span class="mu">· Video total: ${hm(mv(lm))}</span></td></tr>`}
   const g=t.logs.find(q=>q.s===i);
   const st=g?(g.vt?'<span class="ok">Verified</span>':g.c?'<span class="wa">Awaiting verify</span>':g.st?'<span class="wa">In progress</span>':'<span class="wa">Assigned</span>'):"Locked";
-  rows+=`<tr class="${g?"":"lkd"}"><td>${i+1}</td><td>${x.t}</td><td>${esc(x.n)}${g?watchBtn(t,i):""}</td><td>${x.d}</td><td>${x.by}</td><td>${g?fmt(g.st):"–"}</td><td>${g?fmt(g.c):"–"}</td><td>${g&&g.vt?esc(g.v):"–"}</td><td>${g?took(g.st||g.a,g.c):"–"}</td><td>${st}</td></tr>`});
+  rows+=`<tr class="${g?"":"lkd"}"><td>${i+1}</td><td>${x.t}</td><td>${esc(x.n)}${g&&x.t==="VIDEO"&&vfolder(biz(t),i)?` <button type="button" class="sm" data-a="watchstep" data-s="${i}">▶ Watch</button>`:""}</td><td>${x.d}</td><td>${x.by}</td><td>${g?fmt(g.st):"–"}</td><td>${g?fmt(g.c):"–"}</td><td>${g&&g.vt?esc(g.v):"–"}</td><td>${g?took(g.st||g.a,g.c):"–"}</td><td>${st}</td></tr>`});
  const vn=ST.filter(x=>x.m===vm),vd=vn.filter(x=>t.logs.some(g=>g.vt&&ST[g.s]===x)).length,w=waiting(t),can=w!=null&&ST[w].m===vm+1;
 const nav=`<div class="navbar"><button class="gh" data-a="prev" ${vm<=0?"disabled":""}>‹ Previous</button><div class="nv"><b>${MODS[vm].n}</b><span class="mu">${vd}/${vn.length} verified · ${hm(vn.reduce((z,x)=>z+x.mn,0))} planned</span></div><button class="${can?"p":"gh"}" data-a="next" ${vm<sm||can?"":"disabled"}>${can?"Start "+mshort(w)+" ›":"Next ›"}</button></div>${vm===sm&&vm+1<MODS.length&&!can?`<div class="mu" style="margin-top:8px;text-align:right">The next module unlocks once this one is fully verified.</div>`:""}`;
  let act="";
  if(l){const x=ST[l.s];act=`<div class="card cur"><div class="mu">Current · Step ${l.s+1} of ${ST.length} · ${MODS[x.m].n}</div>
  <h2 style="margin-top:4px"><span class="chip">${x.t}</span> ${esc(x.n)}</h2>
- <div class="mu">Duration ${x.d} · Monitored by ${x.by}</div><div style="margin-top:10px">
- ${l.c?`<div class="mu" style="margin-bottom:8px">Completed ${fmt(l.c)}. ${l.s+1<ST.length&&ST[l.s+1].m!==x.m?"This is the last step of the module; the next module starts only when you press Start.":"Verification will assign the next step."}</div>
+ <div class="mu">Duration ${x.d} · Monitored by ${x.by}</div>${x.t==="VIDEO"&&vfolder(biz(t),l.s)?`<div style="margin-top:10px"><button type="button" class="sm gh" data-a="watchstep" data-s="${l.s}">▶ Watch this video</button></div>`:""}<div style="margin-top:10px">
+ ${l.c?`<div class="mu" style="margin-bottom:8px">Completed ${fmt(l.c)}.${l.pdf?` Presentation: ${pdfLink(t,l)}.`:""} ${l.s+1<ST.length&&ST[l.s+1].m!==x.m?"This is the last step of the module; the next module starts only when you press Start.":"Verification will assign the next step."}</div>
  <div class="row"><input id="vb" placeholder="Verified by (${esc(x.by)} – name)"><button class="p" data-a="ver">Verify &amp; assign next</button></div>`
- :l.st?`<div class="mu" style="margin-bottom:8px">Assigned ${fmt(l.st)}</div><button class="p" data-a="cmp">Mark completed now</button>`:`<div class="mu" style="margin-bottom:8px">Assigned but not started. Time is counted only from when you press Start.</div><button class="p" data-a="go">▶ Start task</button>`}</div></div>`}
+ :l.st?`<div class="mu" style="margin-bottom:8px">Assigned ${fmt(l.st)}</div>${needsPdf(x)?pdfUi(t,l)+(l.pdf?"":`<div class="mu" style="margin-bottom:8px">Upload your presentation (PDF) to enable completion.</div>`):""}<button class="p" data-a="cmp" ${needsPdf(x)&&!l.pdf?"disabled":""}>Mark completed now</button>`:`<div class="mu" style="margin-bottom:8px">Assigned but not started. Time is counted only from when you press Start.</div><button class="p" data-a="go">▶ Start task</button>`}</div></div>`}
  else if(waiting(t)!=null){const w=waiting(t),y=ST[w];act=`<div class="card cur"><div class="mu">${MODS[ST[w-1].m].n} finished and verified</div><h2 style="margin-top:4px">Next: ${MODS[y.m].n}</h2><div class="mu" style="margin-bottom:10px">First step: ${esc(y.n)} (${y.d}). Time is counted only from when you press Start.</div><button class="p" data-a="start">▶ Start ${mshort(w)}</button></div>`}
  else act=`<div class="card cur ok"><b>All ${ST.length} steps completed and verified 🎉</b></div>`;
  return `<div class="card"><div class="sp"><h1>${esc(t.name)}</h1><span class="chip ${c}">${s}</span></div>
@@ -231,110 +333,74 @@ const nav=`<div class="navbar"><button class="gh" data-a="prev" ${vm<=0?"disable
  ${act}${tiles(t)}<div class="card"><h2>Workflow log</h2><div class="sc"><table><tr><th>#</th><th>Type</th><th>Task</th><th>Planned</th><th>Monitor</th><th>Assigned</th><th>Completed</th><th>Verified by</th><th>Time taken</th><th>Status</th></tr>${rows}</table></div>${nav}</div>`;
 }
 
-// ---- View dropdown: Overview (trainees) / Hierarchy (uploaded image). The business is chosen from the business cards.
-function slicers(){
- const sub=SUBVIEWS.map(v=>`<option value="${esc(v)}"${S.sub===v?" selected":""}>${esc(v)}</option>`).join("");
- return `<div class="slc"><label class="sl"><span class="mu">View</span><select id="sub-sel">${sub}</select></label></div>`;
-}
-// Hierarchy view: one uploaded image per business (stored on the server)
-function hierPage(){
- const L=S.biz==="All"?BUSINESSES:[S.biz];
- return `<div class="ph">${S.biz==="All"?"":`<button class="gh sm" data-a="bizopen" data-v="All">← All businesses</button>`}<h1${S.biz==="All"?"":` style="margin-top:0.5rem"`}>${S.biz==="All"?"Business hierarchy":esc(S.biz)+" hierarchy"}</h1><div class="mu">Upload the hierarchy image of each business (PNG, JPG, WEBP or GIF, up to 10 MB).</div></div>${slicers()}`
-  +L.map(b=>{const h=S.hier[b];return `<div class="card hcard"><div class="sp"><h2>${esc(b)} hierarchy</h2><div class="row"><label class="upl">${h?"Replace image":"Upload image"}<input type="file" class="hfile" data-biz="${esc(b)}" accept="image/png,image/jpeg,image/webp,image/gif" hidden></label>${h?`<button class="sm dgr" data-a="hierdel" data-v="${esc(b)}">Remove</button>`:""}</div></div>`
-   +(h?`<img class="himg" src="/api/hierarchy/image/${encodeURIComponent(b)}?v=${h.v}" alt="${esc(b)} hierarchy">`:`<div class="mu">No hierarchy image uploaded for ${esc(b)} yet.</div>`)+`</div>`}).join("");
-}
-async function uploadHier(biz,file){
- if(!file)return;
- if(file.size>10*1024*1024)return alert("The image is larger than 10 MB.");
- const body=new FormData();body.append("image",file);
- try{
-  const r=await fetch("/api/hierarchy/"+encodeURIComponent(biz),{method:"POST",body}),j=await r.json().catch(()=>({}));
-  if(!r.ok)throw new Error(j.error||"Could not upload the image.");
-  S.hier[biz]=j.entry;render();
- }catch(e){alert(e instanceof Error?e.message:String(e))}
-}
-// ---- Video mapping: Business > Module > Task  ->  video folder (playing location)
-const firstStep=mi=>{const v=ST.findIndex(x=>x.m===mi&&x.t==="VIDEO");return v>=0?v:ST.findIndex(x=>x.m===mi)};
-// When a task is started and a video is mapped for it, open the player and start playing.
-function autoWatch(t,i){const f=mapped(bizOf(t),i);if(!f)return;S.add=false;S.edit=false;S.modal=null;S.upload=false;S.mp=null;S.vt=ST[i].n;S.vf=f;S.video=true;S.auto=true}
-function watchBtn(t,i,big){
- if(!mapped(bizOf(t),i))return "";
- return big?`<div style="margin-top:8px"><button class="p" data-a="watch" data-i="${i}">▶ Watch video</button></div>`:` <button class="sm" data-a="watch" data-i="${i}">▶ Watch</button>`;
-}
-function mapModal(){
- const m=S.mp,bz=m.biz,cur=m.folder||"";
- const pills=BUSINESSES.map(b=>`<button type="button" class="pill${b===bz?" on":""}" data-a="mapbiz" data-v="${esc(b)}">${esc(b)}</button>`).join("");
- const mods=MODS.map((x,i)=>`<option value="${i}"${i===m.mi?" selected":""}>${esc(x.n)}</option>`).join("");
- const tasks=ST.map((x,i)=>({x,i})).filter(o=>o.x.m===m.mi).map(o=>`<option value="${o.i}"${o.i===m.si?" selected":""}>${o.i+1}. [${o.x.t}] ${esc(o.x.n)}${mapped(bz,o.i)?"  ✓ mapped":""}</option>`).join("");
- const fl=[...new Set([...(S.folders||[]),...(cur?[cur]:[])])];
- const folders=`<option value="">Select a video folder</option>`+fl.map(f=>`<option value="${esc(f)}"${f===cur?" selected":""}>${esc(f)}</option>`).join("");
- const rows=ST.map((x,i)=>({x,i,f:mapped(bz,i)})).filter(o=>o.f).map(o=>`<tr><td>${o.i+1}</td><td>${esc(MODS[o.x.m].n.split(" · ")[0])}</td><td>${esc(o.x.n)}</td><td>${esc(o.f)}</td><td><div class="row"><button type="button" class="sm" data-a="mapplay" data-i="${o.i}">▶ Play</button><button type="button" class="sm dgr" data-a="mapdel" data-i="${o.i}">Remove</button></div></td></tr>`).join("");
- return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="map-title"><div class="bd" data-a="mapclose"></div><div class="mb wide"><h2 id="map-title">Map videos to tasks</h2><div class="mu">Pick the business, module and task, then choose the video folder that should play there.</div>
- <div class="fl"><span>Business</span><div class="pl">${pills}</div></div>
- <label class="fl">Module<select id="mp-mod">${mods}</select></label>
- <label class="fl">Task<select id="mp-task">${tasks}</select></label>
- <label class="fl">Video (playing location)<select id="mp-folder">${folders}</select></label>
- <div class="mu" id="mp-status" role="status" aria-live="polite" style="margin-top:8px">${esc(m.msg||"")}</div>
- <div class="row" style="margin-top:12px;justify-content:flex-end"><button type="button" data-a="mapclose">Close</button><button type="button" class="p" data-a="mapsave">Save mapping</button></div>
- <h2 style="margin-top:20px">Mapped for ${esc(bz)}</h2>${rows?`<div class="sc"><table><tr><th>#</th><th>Module</th><th>Task</th><th>Video folder</th><th></th></tr>${rows}</table></div>`:`<div class="mu">No videos mapped for ${esc(bz)} yet.</div>`}</div></div>`;
-}
-async function loadMapFolders(){
- try{
-  const r=await fetch("/api/videos"),j=await r.json().catch(()=>({}));
-  if(!r.ok)throw new Error(j.error||"Could not load video folders.");
-  S.folders=Array.isArray(j.folders)?j.folders:[];
-  if(S.mp&&!S.folders.length)S.mp.msg="No uploaded videos yet. Use Upload video first.";
- }catch(e){if(S.mp)S.mp.msg=e instanceof Error?e.message:String(e)}
- if(S.mp)render();
-}
-
 // ---- Actions
 document.addEventListener("click",e=>{
  const b=e.target.closest("[data-a]");if(!b)return;const a=b.dataset.a,t=S.t.find(x=>x.id===S.sel);
+ if(a.startsWith("map")){return mapAction(a,b)}
+ if(a==="hyremove")return hierRemove(b.dataset.b);
  if(a==="add"){const n=document.getElementById("nm").value.trim();if(!n)return document.getElementById("nm").focus();
-  const d=now();const g=i=>document.getElementById(i).value.trim();S.t.push({id:Date.now(),name:n,biz:g("bz"),dept:g("dp"),branch:g("br"),desg:g("ds"),join:g("jd"),sal:g("sl"),wage:g("wg"),start:d,logs:[{s:0,a:d}]});S.add=false}
+  const d=now();const g=i=>document.getElementById(i).value.trim();S.t.push({id:Date.now(),biz:g("bz")||"Magnus",name:n,dept:g("dp"),branch:g("br"),desg:g("ds"),join:g("jd"),sal:g("sl"),wage:g("wg"),start:d,logs:[{s:0,a:d}]});S.add=false}
+ else if(a==="openbiz"){S.view=b.dataset.b;S.bv="overview";S.q=""}
+ else if(a==="allbiz"){S.view="overview";S.bv="overview";S.q=""}
  else if(a==="open"){S.sel=+b.dataset.id;S.vm=null;S.modal=null;S.edit=false}
  else if(a==="back"){S.sel=null;S.modal=null;S.edit=false}
  else if(a==="del"){if(!confirm("Remove this trainee and all their records?"))return;S.t=S.t.filter(x=>x.id!==+b.dataset.id);S.sel=null}
- else if(a==="cmp"){cur(t).c=now()}
+ else if(a==="cmp"){const l=cur(t);if(needsPdf(ST[l.s])&&!l.pdf)return;l.c=now()}
  else if(a==="ver"){const v=document.getElementById("vb").value.trim();if(!v)return document.getElementById("vb").focus();
   const l=cur(t),d=now();l.v=v;l.vt=d;if(l.s+1<ST.length&&ST[l.s+1].m===ST[l.s].m)t.logs.push({s:l.s+1,a:d});else if(modDone(t,ST[l.s].m)&&modScore(t,ST[l.s].m)==null)S.modal=ST[l.s].m}
- else if(a==="start"){if(waiting(t)!=null){const w=waiting(t),d=now();t.logs.push({s:w,a:d,st:d});S.vm=null;autoWatch(t,w)}}
- else if(a==="go"){const l=cur(t);if(l&&!l.st){l.st=now();autoWatch(t,l.s)}}
+ else if(a==="start"){if(waiting(t)!=null){const d=now();t.logs.push({s:waiting(t),a:d,st:d});S.vm=null}}
+ else if(a==="go"){const l=cur(t);if(l&&!l.st)l.st=now()}
  else if(a==="prev"){S.vm=vmod(t)[0]-1}
- else if(a==="next"){const[v,m]=vmod(t);if(v<m)S.vm=v+1;else if(waiting(t)!=null&&ST[waiting(t)].m===v+1){const w=waiting(t),d=now();t.logs.push({s:w,a:d,st:d});S.vm=null;autoWatch(t,w)}}
+ else if(a==="next"){const[v,m]=vmod(t);if(v<m)S.vm=v+1;else if(waiting(t)!=null&&ST[waiting(t)].m===v+1){const d=now();t.logs.push({s:waiting(t),a:d,st:d});S.vm=null}}
  else if(a==="score"){S.modal=+b.dataset.mi}
  else if(a==="addopen"){S.add=true}
  else if(a==="uploadopen"){S.add=false;S.edit=false;S.modal=null;S.upload=true}
  else if(a==="uploadcancel"){cancelVideoUpload();return}
  else if(a==="parent-create-cancel"){document.getElementById("parent-create-panel").hidden=true;document.getElementById("parent-folder-status").textContent="";return}
  else if(a==="parent-create"){createParentFolder();return}
- else if(a==="videoopen"){S.add=false;S.edit=false;S.modal=null;S.upload=false;S.mp=null;S.vt="";S.vf="";S.video=true}
- else if(a==="videocancel"){stopVideoPlayer();S.video=false;S.vt="";S.vf=""}
+ else if(a==="videoopen"){S.add=false;S.edit=false;S.modal=null;S.upload=false;S.video=true}
+ else if(a==="videocancel"){stopVideoPlayer();S.video=false;S.vpre=""}
+ else if(a==="watchstep"){const st=+b.dataset.s,f=t?vfolder(biz(t),st):"";if(!f)return;S.add=false;S.edit=false;S.modal=null;S.upload=false;S.map=false;S.vpre=f;S.video=true}
  else if(a==="mcancel"){S.modal=null;S.edit=false;S.add=false}
  else if(a==="ename"){S.edit=true}
- else if(a==="esave"){const el=document.getElementById("en-nm"),n=el.value.trim();if(!n)return el.focus();t.name=n;t.biz=document.getElementById("en-bz").value;S.edit=false}
+ else if(a==="esave"){const el=document.getElementById("en-nm"),n=el.value.trim();if(!n)return el.focus();t.name=n;S.edit=false}
  else if(a==="msave"){const el=document.getElementById("ms-sc"),n=+el.value;if(el.value.trim()===""||!Number.isFinite(n))return el.focus();
   t.scores=t.scores||{};t.scores[S.modal]={sc:Math.max(0,Math.min(MAXSC,n)),rm:document.getElementById("ms-rm").value.trim()};S.modal=null}
- else if(a==="bizopen"){S.biz=b.dataset.v;S.sub="Overview";return render()}
- else if(a==="hierdel"){const bz=b.dataset.v;if(!confirm("Remove the hierarchy image for "+bz+"?"))return;fetch("/api/hierarchy/"+encodeURIComponent(bz),{method:"DELETE"}).then(r=>{if(!r.ok)throw new Error("x");delete S.hier[bz];render()}).catch(()=>alert("Could not remove the image."));return}
- else if(a==="mapopen"){S.add=false;S.edit=false;S.modal=null;S.upload=false;S.video=false;const bz=t?bizOf(t):(S.biz!=="All"?S.biz:BUSINESSES[0]),si=firstStep(0);S.mp={biz:bz,mi:0,si,folder:mapped(bz,si),msg:""}}
- else if(a==="mapclose"){S.mp=null}
- else if(a==="mapbiz"){S.mp.biz=b.dataset.v;S.mp.folder=mapped(S.mp.biz,S.mp.si);S.mp.msg="";return render()}
- else if(a==="mapsave"){const m=S.mp;if(!m.folder){m.msg="Select a video folder first.";return render()}
-  (S.vmap[m.biz]=S.vmap[m.biz]||{})[vkey(m.si)]=m.folder;saveMap();m.msg="Saved: "+ST[m.si].n+" → "+m.folder;return render()}
- else if(a==="mapdel"){const i=+b.dataset.i,m=S.mp;if(S.vmap[m.biz]){delete S.vmap[m.biz][vkey(i)];if(!Object.keys(S.vmap[m.biz]).length)delete S.vmap[m.biz]}
-  if(i===m.si)m.folder="";saveMap();m.msg="Mapping removed.";return render()}
- else if(a==="mapplay"){const i=+b.dataset.i,f=mapped(S.mp.biz,i);if(!f)return;S.vt=ST[i].n;S.vf=f;S.mp=null;S.video=true}
- else if(a==="watch"){const i=+b.dataset.i,f=t?mapped(bizOf(t),i):"";if(!f)return;S.add=false;S.edit=false;S.modal=null;S.upload=false;S.mp=null;S.vt=ST[i].n;S.vf=f;S.video=true}
  else if(a==="theme")return toggleTheme();
  else if(a==="csv")return csv();
  save();render();
  if(a==="uploadopen")loadParentFolders();
  if(a==="videoopen")loadVideoFolders();
- if(a==="watch"||a==="mapplay"||S.auto){S.auto=false;playVideo(S.vf,true)}
- if(a==="mapopen")loadMapFolders();
+ if(a==="watchstep")loadVideoFolders(S.vpre);
 });
+
+document.addEventListener("change",e=>{
+ if(e.target.id==="view"){S.bv=e.target.value;render();return}
+ const inp=e.target.closest&&e.target.closest("#pdf-file");
+ if(inp)uploadPresentation(inp);
+});
+function uploadPresentation(inp){
+ const file=inp.files[0];if(!file)return;
+ const t=S.t.find(x=>x.id===S.sel),l=t&&cur(t);if(!l)return;
+ const status=document.getElementById("pdf-status");
+ const fail=m=>{if(status)status.textContent=m;inp.value=""};
+ if(!/\.pdf$/i.test(file.name)||(file.type&&file.type!=="application/pdf"))return fail("Only PDF files are allowed.");
+ if(file.size>PDFMAX)return fail("The PDF must be 25 MB or smaller.");
+ const step=l.s,fd=new FormData();
+ fd.append("trainee_id",t.id);fd.append("step",step);fd.append("file",file);
+ inp.disabled=true;
+ const xhr=new XMLHttpRequest();
+ xhr.open("POST","/api/presentations");
+ xhr.upload.onprogress=ev=>{if(ev.lengthComputable&&status)status.textContent="Uploading… "+Math.round(ev.loaded/ev.total*100)+"%"};
+ xhr.onerror=()=>{inp.disabled=false;fail("Upload failed. Check your connection and try again.")};
+ xhr.onload=()=>{
+  let r={};try{r=JSON.parse(xhr.responseText||"{}")}catch(_){}
+  if(xhr.status<200||xhr.status>=300){inp.disabled=false;return fail(r.error||"Upload failed.")}
+  const lg=t.logs.find(g=>g.s===step);
+  if(lg){lg.pdf={n:file.name,sz:file.size,at:now()};save();render()}
+ };
+ xhr.send(fd);
+}
 
 async function loadParentFolders(selectedFolder=""){
  const select=document.getElementById("video-parent-folder"),status=document.getElementById("parent-folder-status");
@@ -389,44 +455,45 @@ async function loadVideoFolders(pre=""){
   if(!Array.isArray(result.folders))throw new Error("The server returned an invalid video folder list.");
   select.replaceChildren(new Option("Select a folder",""));
   result.folders.forEach(folder=>select.add(new Option(folder,folder)));
+  if(pre){if(!result.folders.includes(pre))select.add(new Option(pre,pre));select.value=pre;playVideo(pre);return}
   if(result.folders.length)status.textContent="Choose a folder to play its video.";
   else{select.replaceChildren(new Option("No videos available",""));status.textContent="Upload a video first."}
-  if(pre){if(![...select.options].some(o=>o.value===pre))select.add(new Option(pre,pre));select.value=pre;playVideo(pre,true)}
  }catch(error){
   select.replaceChildren(new Option("Unable to load folders",""));
   status.textContent=error instanceof Error?error.message:String(error);
  }
 }
 
-function stopVideoPlayer(){
+function stopVideoPlayer(id="video-player"){
  if(S.hls){S.hls.destroy();S.hls=null}
- const player=document.getElementById("video-player");
+ const player=document.getElementById(id);
  if(player){player.onerror=null;player.pause();player.removeAttribute("src");player.load()}
 }
 
-function playVideo(folder,auto){
- const player=document.getElementById("video-player"),status=document.getElementById("video-player-status");
- stopVideoPlayer();
+function playVideo(folder,pid="video-player",sid="video-player-status"){
+ const player=document.getElementById(pid),status=document.getElementById(sid);
+ if(!player||!status)return;
+ stopVideoPlayer(pid);
  if(!folder){player.hidden=true;status.textContent="Choose a folder to play its video.";return}
  const playlist="/api/videos/"+folder.split("/").map(encodeURIComponent).join("/")+"/index.m3u8";
  player.hidden=false;
- player.onerror=()=>{(status.classList.add("err"),status.textContent="Could not load this video. Check the playlist and storage.")};
+ player.onerror=()=>{status.textContent="Could not load this video. Check the playlist and storage."};
  status.textContent="Loading playlist…";
  if(player.canPlayType("application/vnd.apple.mpegurl")){
-  player.src=playlist;if(auto)player.play().catch(()=>{status.textContent="Press play to start the video."});
+  player.src=playlist;
   return;
  }
  if(!window.Hls||!window.Hls.isSupported()){
   player.hidden=true;
-  status.classList.add("err");status.textContent="HLS playback is not supported in this browser.";
+  status.textContent="HLS playback is not supported in this browser.";
   return;
  }
  const hls=new window.Hls();
  S.hls=hls;
- hls.on(window.Hls.Events.MANIFEST_PARSED,()=>{status.textContent="Ready to play.";if(auto)player.play().catch(()=>{status.textContent="Press play to start the video."})});
+ hls.on(window.Hls.Events.MANIFEST_PARSED,()=>{status.textContent="Ready to play."});
  hls.on(window.Hls.Events.ERROR,(_,data)=>{
   if(data.fatal){
-   (status.classList.add("err"),status.textContent="Could not load this video. Check the playlist and storage.");
+   status.textContent="Could not load this video. Check the playlist and storage.";
    hls.destroy();
    if(S.hls===hls)S.hls=null;
   }
@@ -471,6 +538,11 @@ async function cancelVideoUpload(){
    ?`/api/video-jobs/${encodeURIComponent(active.jobId)}`
    :active.uploadId?`/api/video-uploads/${encodeURIComponent(active.uploadId)}`:null;
  }
+ if(active&&!url){
+   const status=document.getElementById("video-upload-status");
+   if(status)status.textContent="Stopping upload…";
+   return;
+ }
  if(url){
   const status=document.getElementById("video-upload-status");
   if(status)status.textContent="Stopping upload…";
@@ -485,7 +557,7 @@ async function cancelVideoUpload(){
   try{
     await request;
    }catch(error){
-   const message=error instanceof Error?error.message:String(error);
+    const message=error instanceof Error?error.message:String(error);
     if(active)active.cancelFailed=true;
    if(status&&status.isConnected)status.textContent=`Could not stop upload: ${message}`;
    else alert(`Could not stop upload: ${message}`);
@@ -527,7 +599,7 @@ async function uploadVideo(){
  activeVideoUpload=active;
  const setPct=v=>{const n=Math.max(shown,Math.min(100,Math.round(v)));shown=n;bar.style.width=n+"%";progress.setAttribute("aria-valuenow",n);pct.textContent=n+"%"};
  setPct(0);
- phase.textContent="Preparing 50 MB upload parts…";
+ phase.textContent="Uploading video to server…";
  status.classList.remove("upload-status--success");
  status.textContent="Keep this page open until the upload finishes.";
  let uploadId=null;
@@ -567,7 +639,6 @@ async function uploadVideo(){
   active.uploadId=null;
   if(result.job_id){
    active.jobId=result.job_id;
-   if(active.cancelled)await fetch(`/api/video-jobs/${encodeURIComponent(active.jobId)}`,{method:"DELETE"}).catch(()=>{});
    result=await pollVideoJob(result.job_id,job=>{
     const p=job.percent||0;
     if(job.status==="uploading"){
@@ -593,24 +664,36 @@ async function uploadVideo(){
   status.append(icon,message);
  }catch(error){
   if(active.cancelled){
-   if(active.cancelPromise)await active.cancelPromise.catch(()=>{});
-   else{
+   if(!active.cancelPromise){
     const url=active.jobId
      ?`/api/video-jobs/${encodeURIComponent(active.jobId)}`
      :uploadId?`/api/video-uploads/${encodeURIComponent(uploadId)}`:null;
     if(url){
-     try{
-      const response=await fetch(url,{method:"DELETE"});
+     const request=fetch(url,{method:"DELETE"}).then(async response=>{
       const result=await response.json().catch(()=>({}));
       if(!response.ok)throw new Error(result.error||"The server could not stop the upload.");
-     }catch(cancelError){
-      const message=cancelError instanceof Error?cancelError.message:String(cancelError);
+     }).catch(cancelError=>{
       active.cancelFailed=true;
-      alert(`Could not stop upload: ${message}`);
-     }
+      throw cancelError;
+     });
+     active.cancelPromise=request;
     }
    }
-   if(!active.cancelFailed)status.textContent="Upload cancelled.";
+   if(active.cancelPromise){
+    try{
+     await active.cancelPromise;
+    }catch(cancelError){
+      const message=cancelError instanceof Error?cancelError.message:String(cancelError);
+      active.cancelFailed=true;
+      if(status.isConnected)status.textContent=`Could not stop upload: ${message}`;
+      else alert(`Could not stop upload: ${message}`);
+     }
+   }
+   if(!active.cancelFailed){
+    status.textContent="Upload cancelled.";
+    S.upload=false;
+    render();
+   }
   }else{
    if(uploadId)await fetch(`/api/video-uploads/${encodeURIComponent(uploadId)}`,{method:"DELETE"}).catch(()=>{});
    status.textContent=`Upload failed: ${error instanceof Error?error.message:String(error)}`;
@@ -629,6 +712,11 @@ document.addEventListener("submit",e=>{
  uploadVideo();
 });
 document.addEventListener("change",e=>{
+ if(e.target.classList&&e.target.classList.contains("hy-file"))return hierUpload(e.target);
+ const id=e.target.id;
+ if(id==="map-module"){S.mm=+e.target.value;S.mt=null;S.mfTouched=false;S.mmsg="";return mapRender()}
+ if(id==="map-task"){S.mt=+e.target.value;S.mfTouched=false;S.mmsg="";return mapRender()}
+ if(id==="map-folder"){S.mf=e.target.value;S.mfTouched=true;S.mmsg="";return mapRender()}
  if(e.target.id==="video-parent-folder"){
   const select=e.target,option=select.selectedOptions[0];
   if(option&&option.dataset.action==="create-parent"){
@@ -637,27 +725,56 @@ document.addEventListener("change",e=>{
    document.getElementById("new-parent-folder").focus();
   }else select.dataset.selectedFolder=select.value;
  }else if(e.target.id==="video-library-folder")playVideo(e.target.value);
- else if(e.target.id==="biz-sel"){S.biz=e.target.value;render()}
- else if(e.target.id==="sub-sel"){S.sub=e.target.value;render()}
- else if(e.target.classList.contains("hfile")){uploadHier(e.target.dataset.biz,e.target.files[0])}
- else if(e.target.id==="mp-mod"&&S.mp){S.mp.mi=+e.target.value;S.mp.si=firstStep(S.mp.mi);S.mp.folder=mapped(S.mp.biz,S.mp.si);S.mp.msg="";render()}
- else if(e.target.id==="mp-task"&&S.mp){S.mp.si=+e.target.value;S.mp.folder=mapped(S.mp.biz,S.mp.si);S.mp.msg="";render()}
- else if(e.target.id==="mp-folder"&&S.mp){S.mp.folder=e.target.value;S.mp.msg=""}
 });
 
 function csv(){
  const r=[["Trainee","Business","Branch","Department","Designation","Joining date","Salary","Wage","Step","Module","Type","Task","Monitored by","Assigned","Completed","Verified by","Verified at"]];
- S.t.forEach(t=>t.logs.forEach(g=>{const x=ST[g.s];r.push([t.name,bizOf(t),t.branch||"",t.dept,t.desg||"",t.join||"",t.sal||"",t.wage||"",g.s+1,MODS[x.m].n,x.t,x.n,x.by,g.st||"",g.c||"",g.v||"",g.vt||""])}));
+ S.t.forEach(t=>t.logs.forEach(g=>{const x=ST[g.s];r.push([t.name,biz(t),t.branch||"",t.dept,t.desg||"",t.join||"",t.sal||"",t.wage||"",g.s+1,MODS[x.m].n,x.t,x.n,x.by,g.st||"",g.c||"",g.v||"",g.vt||""])}));
  const s=r.map(a=>a.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(",")).join("\n");
  const u=URL.createObjectURL(new Blob([s],{type:"text/csv"})),a=document.createElement("a");a.href=u;a.download="trainee-log.csv";a.click();
 }
 document.addEventListener("keydown",e=>{
- if(e.key==="Escape"&&(S.modal!=null||S.edit||S.add||S.upload||S.video||S.mp)){if(S.video)stopVideoPlayer();S.modal=null;S.edit=false;S.add=false;S.upload=false;S.video=false;S.mp=null;S.vt="";render()}
+ if((e.key==="Enter"||e.key===" ")&&e.target.classList&&(e.target.classList.contains("bz")||e.target.classList.contains("hy-t"))){e.preventDefault();e.target.click();return}
+ if(e.key==="Escape"&&(S.modal!=null||S.edit||S.add||S.upload||S.video||S.map)){stopVideoPlayer();stopVideoPlayer("map-player");S.modal=null;S.edit=false;S.add=false;S.upload=false;S.video=false;S.map=false;S.mplay="";render()}
  else if(e.key==="Enter"&&S.add&&e.target.tagName==="INPUT"){const b=document.querySelector('[data-a="add"]');if(b)b.click()}
  else if(e.key==="Enter"&&e.target.id==="en-nm"){const b=document.querySelector('[data-a="esave"]');if(b)b.click()}
 });
-document.addEventListener("input",e=>{if(e.target.id==="q"){S.q=e.target.value;const l=document.getElementById("tl");if(l)l.innerHTML=tcards()}});
-Promise.all([load(),loadMap(),loadHier()]).then(render);
+document.addEventListener("input",e=>{if(e.target.id==="q"){S.q=e.target.value;const l=document.getElementById("tl");if(l)l.innerHTML=listBody()}});
+// ---- Map videos modal actions
+function mapRender(){
+ const box=document.querySelector(".mb"),top=box?box.scrollTop:0;
+ stopVideoPlayer("map-player");render();
+ const nb=document.querySelector(".mb");if(nb)nb.scrollTop=top;
+ if(S.mplay)playVideo(S.mplay,"map-player","map-player-status");
+}
+async function loadMapFolders(){
+ try{
+  const r=await fetch("/api/videos"),d=await r.json().catch(()=>({}));
+  if(!r.ok||!Array.isArray(d.folders))throw new Error(d.error||"Could not load video folders.");
+  S.folders=d.folders;S.mfstat=d.folders.length?"":"No videos available";
+ }catch(err){S.mfstat="Unable to load folders";S.mmsg=err instanceof Error?err.message:String(err)}
+ if(S.map)mapRender();
+}
+async function mapSend(business,key,folder){
+ const r=await fetch("/api/video-map",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({business,key,folder})});
+ const d=await r.json().catch(()=>({}));
+ if(!r.ok)throw new Error(d.error||"Could not save the mapping.");
+ S.vmap=d;
+}
+async function mapAction(a,b){
+ if(a==="mapopen"){S.add=false;S.edit=false;S.modal=null;S.upload=false;S.video=false;stopVideoPlayer();
+  S.map=true;S.mplay="";S.mmsg="";S.mfTouched=false;S.mfstat="Loading folders…";render();loadMap().then(()=>S.map&&mapRender());loadMapFolders();return}
+ if(a==="mapcancel"){stopVideoPlayer("map-player");S.map=false;S.mplay="";return render()}
+ if(a==="mapbiz"){S.mb=b.dataset.b;S.mt=null;S.mfTouched=false;S.mmsg="";S.mplay="";return mapRender()}
+ if(a==="mapplay"){S.mplay=b.dataset.f;return mapRender()}
+ if(a==="mapstop"){S.mplay="";return mapRender()}
+ try{
+  if(a==="mapsave"){if(S.mt==null||!S.mf)return;await mapSend(S.mb,mkey(S.mt),S.mf);S.mmsg="Saved ✓ "+ST[S.mt].n+" now plays "+S.mf;S.mfTouched=false}
+  else if(a==="mapremove"){if(!confirm("Remove this video mapping?"))return;await mapSend(S.mb,b.dataset.k,null);S.mmsg="Mapping removed.";S.mfTouched=false;if(S.mplay&&!(S.vmap[S.mb]&&Object.values(S.vmap[S.mb]).includes(S.mplay)))S.mplay=""}
+ }catch(err){S.mmsg=err instanceof Error?err.message:String(err)}
+ mapRender();
+}
+load().then(render);loadMap().then(()=>{if(!S.map)render()});loadHier().then(()=>{if(S.bv==="hierarchy"&&!S.sel)render()});
 
 // ---- Light / dark theme toggle (button sits in the page header; choice is remembered in this browser)
 const curTheme=()=>document.documentElement.dataset.theme||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");

@@ -14,6 +14,10 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 BUCKET_NAME = os.getenv("BUCKET_NAME")
 ACCOUNT_ID = os.getenv("ACCOUNT_ID")
 
+PRESENTATION_PREFIX = "presentations"
+MAX_PRESENTATION_BYTES = 25 * 1024 * 1024
+HIERARCHY_PREFIX = "hierarchy"
+
 
 def _get_s3_client():
     if not all((ACCESS_KEY, SECRET_KEY, BUCKET_NAME, ACCOUNT_ID)):
@@ -73,7 +77,7 @@ def get_parent_folders():
     for page in paginator.paginate(Bucket=BUCKET_NAME, Delimiter="/"):
         for prefix in page.get("CommonPrefixes", []):
             folder = prefix["Prefix"].rstrip("/")
-            if folder:
+            if folder and folder != PRESENTATION_PREFIX:
                 folders.add(folder)
     return sorted(folders)
 
@@ -99,6 +103,42 @@ def create_parent_folder(folder_name):
     )
 
 
+def presentation_key(trainee_id, step):
+    return f"{PRESENTATION_PREFIX}/{int(trainee_id)}/{int(step)}.pdf"
+
+
+def upload_presentation_pdf(trainee_id, step, data):
+    """Store a trainee's presentation PDF in the R2 bucket (replaces any earlier one)."""
+    _get_s3_client().put_object(
+        Bucket=BUCKET_NAME,
+        Key=presentation_key(trainee_id, step),
+        Body=data,
+        ContentType="application/pdf",
+    )
+
+
+def get_presentation_object(trainee_id, step):
+    return _get_s3_client().get_object(Bucket=BUCKET_NAME, Key=presentation_key(trainee_id, step))
+
+
+def upload_hierarchy_image(slug, data, content_type):
+    """Store a business hierarchy image in the R2 bucket (replaces any earlier one)."""
+    _get_s3_client().put_object(
+        Bucket=BUCKET_NAME,
+        Key=f"{HIERARCHY_PREFIX}/{slug}",
+        Body=data,
+        ContentType=content_type,
+    )
+
+
+def get_hierarchy_object(slug):
+    return _get_s3_client().get_object(Bucket=BUCKET_NAME, Key=f"{HIERARCHY_PREFIX}/{slug}")
+
+
+def delete_hierarchy_object(slug):
+    _get_s3_client().delete_object(Bucket=BUCKET_NAME, Key=f"{HIERARCHY_PREFIX}/{slug}")
+
+
 def get_video_object(object_key):
     """Get one HLS playlist or segment from the configured bucket."""
     return _get_s3_client().get_object(Bucket=BUCKET_NAME, Key=object_key)
@@ -116,7 +156,6 @@ def _rclone_env():
         "RCLONE_CONFIG_R2_SECRET_ACCESS_KEY": SECRET_KEY,
         "RCLONE_CONFIG_R2_ENDPOINT": f"https://{ACCOUNT_ID}.r2.cloudflarestorage.com",
         "RCLONE_CONFIG_R2_REGION": "auto",
-        "RCLONE_CONFIG_R2_NO_CHECK_BUCKET": "true",
     })
     return env
 
