@@ -1,9 +1,4 @@
-"""Magnus Trainee Tracker - Flask server.
-
-Serves the front end from ./static and stores all trainee data in data.json.
-Run:  pip install -r requirements.txt  &&  python app.py
-Open: http://localhost:5000
-"""
+"""Magnus Trainee Tracker - Flask server backed by Supabase."""
 import json
 import os
 import shutil
@@ -14,7 +9,12 @@ import time
 import uuid
 
 from botocore.exceptions import BotoCoreError, ClientError
-from flask import Flask, Response, jsonify, request
+from dotenv import load_dotenv
+from flask import Flask, Response, g, jsonify, make_response, request
+from postgrest.exceptions import APIError
+from supabase import AuthApiError
+
+from DATA_BASE.db import DataBase
 
 from CLOUD_FLARE.modules import (
     MAX_PRESENTATION_BYTES,
@@ -31,7 +31,7 @@ from CLOUD_FLARE.modules import (
 )
 
 BASE = os.path.dirname(os.path.abspath(__file__))
-DATA_FILE = os.path.join(BASE, "data.json")
+load_dotenv(os.path.join(BASE, ".env"))
 VIDEO_MAP_FILE = os.path.join(BASE, "video_map.json")
 HIERARCHY_FILE = os.path.join(BASE, "hierarchy_images.json")
 # Keep in sync with BUSINESSES in static/config.js
@@ -48,22 +48,133 @@ video_jobs_lock = threading.Lock()
 VIDEO_JOB_TTL = 60 * 60  # keep finished jobs for an hour
 
 app = Flask(__name__, static_folder="static", static_url_path="")
+ACCESS_COOKIE = "mt_access"
+REFRESH_COOKIE = "mt_refresh"
+DEVELOPER_AUTH_EMAIL = os.environ.get(
+    "DEVELOPER_AUTH_EMAIL", "developer@trainee-tracker.invalid"
+)
 
 
-def read_data():
+def _db(access_token=None):
+    return DataBase(
+        os.environ.get("SUPABASE_URL"),
+        os.environ.get("SUPABASE_KEY"),
+        access_token,
+    )
+
+
+@app.before_request
+def authenticate_api_request():
+    if not request.path.startswith("/api/") or request.path in ("/api/login", "/api/logout"):
+        return None
+
+    authorization = request.headers.get("Authorization", "")
+    if not authorization:
+        authorization = "Bearer " + request.cookies.get(ACCESS_COOKIE, "")
+    if not authorization.startswith("Bearer ") or not authorization[7:].strip():
+        return jsonify(error="Sign in to continue."), 401
+
+    token = authorization[7:].strip()
     try:
-        with open(DATA_FILE, encoding="utf-8") as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return []
+        database = _db(token)
+        try:
+            user = database.current_user(token)
+        except AuthApiError:
+            refresh_token = request.cookies.get(REFRESH_COOKIE)
+            if not refresh_token:
+                raise
+            refreshed = _db().client.auth.refresh_session(refresh_token)
+            token = refreshed.session.access_token
+            g.refreshed_session = refreshed.session
+            database = _db(token)
+            user = database.current_user(token)
+        profile = database.profile(user.id)
+    except RuntimeError as exc:
+        return jsonify(error=str(exc)), 503
+    except AuthApiError:
+        return jsonify(error="Your session expired. Please sign in again."), 401
+    except APIError:
+        app.logger.exception("Could not load the signed-in user's profile")
+        return jsonify(error="Could not load your account profile."), 502
+
+    if not profile:
+        return jsonify(error="No application profile is linked to this account."), 403
+    g.database = database
+    g.auth_user = user
+    g.profile = profile
 
 
-def write_data(data):
-    # write to a temp file first so a crash never corrupts data.json
-    fd, tmp = tempfile.mkstemp(dir=BASE, suffix=".tmp")
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, DATA_FILE)
+@app.after_request
+def refresh_auth_cookies(response):
+    session = getattr(g, "refreshed_session", None)
+    if session:
+        response.set_cookie(
+            ACCESS_COOKIE,
+            session.access_token,
+            httponly=True,
+            secure=True,
+            samesite="Strict",
+            max_age=session.expires_in,
+        )
+        response.set_cookie(
+            REFRESH_COOKIE,
+            session.refresh_token,
+            httponly=True,
+            secure=True,
+            samesite="Strict",
+            max_age=30 * 24 * 60 * 60,
+        )
+    return response
+
+
+def _profile_payload(database, profile):
+    result = dict(profile)
+    for field, table in (
+        ("business_id", "businesses"),
+        ("branch_id", "branches"),
+        ("department_id", "departments"),
+    ):
+        value = result.get(field)
+        result[field.replace("_id", "")] = None
+        if value:
+            row = (
+                database.client.table(table)
+                .select("id,name")
+                .eq("id", value)
+                .maybe_single()
+                .execute()
+                .data
+            )
+            result[field.replace("_id", "")] = row
+    return result
+
+
+def _is_developer():
+    return g.profile["role"] == "developer"
+
+
+def _business_names():
+    return {row["name"] for row in g.database.list_options()["businesses"]}
+
+
+def _can_access_business(name):
+    try:
+        return _is_developer() or name in _business_names()
+    except APIError:
+        app.logger.exception("Could not verify business scope")
+        return False
+
+
+def _require_developer():
+    if not _is_developer():
+        return jsonify(error="Only a developer account can perform this action."), 403
+    return None
+
+
+def _require_org_manager():
+    if g.profile["role"] not in ("developer", "business"):
+        return jsonify(error="Only a developer or business account can perform this action."), 403
+    return None
 
 
 def read_video_map():
@@ -262,10 +373,125 @@ def index():
     return app.send_static_file("index.html")
 
 
+@app.post("/api/login")
+def login():
+    body = request.get_json(silent=True)
+    identifier = body.get("username", body.get("email", "")).strip() if isinstance(body, dict) else ""
+    password = body.get("password", "") if isinstance(body, dict) else ""
+    if not identifier or not password:
+        return jsonify(error="Enter your username and password."), 400
+    if "@" in identifier:
+        email = identifier
+    elif identifier.casefold() == "developer":
+        email = DEVELOPER_AUTH_EMAIL
+    else:
+        return jsonify(error="Use the developer username or your Supabase Auth email."), 400
+    try:
+        database = _db()
+        auth = database.sign_in(email, password)
+        profile = database.profile(auth.user.id)
+        if not profile:
+            return jsonify(error="No application profile is linked to this account."), 403
+        response = make_response(jsonify(
+            user=_profile_payload(database, profile),
+        ))
+        response.set_cookie(
+            ACCESS_COOKIE,
+            auth.session.access_token,
+            httponly=True,
+            secure=True,
+            samesite="Strict",
+            max_age=auth.session.expires_in,
+        )
+        response.set_cookie(
+            REFRESH_COOKIE,
+            auth.session.refresh_token,
+            httponly=True,
+            secure=True,
+            samesite="Strict",
+            max_age=30 * 24 * 60 * 60,
+        )
+        return response
+    except RuntimeError as exc:
+        return jsonify(error=str(exc)), 503
+    except AuthApiError:
+        return jsonify(error="Incorrect email or password."), 401
+    except APIError:
+        app.logger.exception("Supabase rejected the login request")
+        return jsonify(error="Could not sign in. Check the Supabase configuration."), 502
+
+
+@app.post("/api/logout")
+def logout():
+    response = make_response(jsonify(ok=True))
+    response.delete_cookie(
+        ACCESS_COOKIE, httponly=True, secure=True, samesite="Strict"
+    )
+    response.delete_cookie(
+        REFRESH_COOKIE, httponly=True, secure=True, samesite="Strict"
+    )
+    return response
+
+
+@app.get("/api/session")
+def get_session():
+    try:
+        return jsonify(user=_profile_payload(g.database, g.profile))
+    except APIError:
+        app.logger.exception("Could not load the signed-in user's scope")
+        return jsonify(error="Could not load your account scope."), 502
+
+
+@app.get("/api/options")
+def get_options():
+    try:
+        return jsonify(g.database.list_options())
+    except APIError:
+        app.logger.exception("Could not load organization options from Supabase")
+        return jsonify(error="Could not load organization options."), 502
+
+
+@app.post("/api/organization")
+def create_organization_record():
+    denied = _require_org_manager()
+    if denied:
+        return denied
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify(error="Invalid organization details."), 400
+    try:
+        records = g.database.create_organization_record(
+            body.get("entity"), body.get("name"), body.get("parent_id")
+        )
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    except APIError as exc:
+        if getattr(exc, "code", None) == "42501":
+            return jsonify(error="Your account is not allowed to manage organization records."), 403
+        if getattr(exc, "code", None) == "23505":
+            return jsonify(error="That organization record already exists."), 409
+        if getattr(exc, "code", None) == "23503":
+            return jsonify(error="Choose an existing parent organization."), 400
+        app.logger.exception("Could not create an organization record")
+        return jsonify(error="Could not create the organization record."), 502
+    if not records:
+        app.logger.error("Supabase created no organization record for entity %s", body.get("entity"))
+        return jsonify(error="The organization record was not returned after creation."), 502
+    return jsonify(record=records[0]), 201
+
+
 @app.get("/api/trainees")
 def get_trainees():
-    with lock:
-        return jsonify(read_data())
+    try:
+        trainees = g.database.list_trainees()
+        if g.profile["role"] not in ("developer", "business"):
+            for trainee in trainees:
+                trainee.pop("sal", None)
+                trainee.pop("wage", None)
+        return jsonify(trainees)
+    except APIError:
+        app.logger.exception("Could not load trainee workflow from Supabase")
+        return jsonify(error="Could not load trainees from the database."), 502
 
 
 @app.put("/api/trainees")
@@ -273,15 +499,30 @@ def put_trainees():
     data = request.get_json(silent=True)
     if not isinstance(data, list):
         return jsonify(error="Expected a JSON list of trainees"), 400
-    with lock:
-        write_data(data)
-    return jsonify(ok=True, count=len(data))
+    try:
+        count = g.database.save_trainees(data, g.profile)
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    except APIError as exc:
+        app.logger.exception("Could not save trainee workflow to Supabase")
+        if getattr(exc, "code", None) == "42501":
+            return jsonify(error="Your account is not allowed to make that change."), 403
+        return jsonify(error="Could not save trainee workflow to the database."), 502
+    return jsonify(ok=True, count=count)
 
 
 @app.get("/api/video-map")
 def get_video_map():
     with lock:
-        return jsonify(read_video_map())
+        data = read_video_map()
+    if _is_developer():
+        return jsonify(data)
+    try:
+        names = _business_names()
+    except APIError:
+        app.logger.exception("Could not check video mapping scope")
+        return jsonify(error="Could not load video mappings."), 502
+    return jsonify({name: value for name, value in data.items() if name in names})
 
 
 @app.put("/api/video-map")
@@ -290,6 +531,9 @@ def put_video_map():
 
     Body: {"business": "Magnus", "key": "0|Marketing introduction", "folder": "HRMS _ MARKETING/INTRO"}
     """
+    denied = _require_developer()
+    if denied:
+        return denied
     body = request.get_json(silent=True)
     if not isinstance(body, dict):
         return jsonify(error="Invalid mapping details."), 400
@@ -320,7 +564,15 @@ def put_video_map():
 @app.get("/api/hierarchy-images")
 def list_hierarchy_images():
     with lock:
-        return jsonify(read_hierarchy())
+        data = read_hierarchy()
+    if _is_developer():
+        return jsonify(data)
+    try:
+        names = _business_names()
+    except APIError:
+        app.logger.exception("Could not check hierarchy image scope")
+        return jsonify(error="Could not load hierarchy images."), 502
+    return jsonify({name: value for name, value in data.items() if name in names})
 
 
 @app.post("/api/hierarchy-images")
@@ -328,8 +580,10 @@ def upload_hierarchy():
     """Upload (or replace) the hierarchy image of one business. Images only."""
     business = request.form.get("business", "")
     upload = request.files.get("file")
-    if business not in BUSINESSES:
-        return jsonify(error="Choose a valid business."), 400
+    if g.profile["role"] not in ("developer", "business"):
+        return jsonify(error="Your account cannot upload hierarchy images."), 403
+    if not _can_access_business(business):
+        return jsonify(error="That business is outside your account scope."), 403
     if upload is None or not upload.filename:
         return jsonify(error="Select an image to upload."), 400
     if request.content_length and request.content_length > MAX_HIERARCHY_BYTES + 1024 * 1024:
@@ -363,7 +617,7 @@ def upload_hierarchy():
 
 @app.get("/api/hierarchy-images/<business>")
 def view_hierarchy_image(business):
-    if business not in BUSINESSES:
+    if not _can_access_business(business):
         return jsonify(error="Unknown business."), 404
     try:
         obj = get_hierarchy_object(_business_slug(business))
@@ -395,7 +649,9 @@ def view_hierarchy_image(business):
 
 @app.delete("/api/hierarchy-images/<business>")
 def delete_hierarchy_image(business):
-    if business not in BUSINESSES:
+    if g.profile["role"] not in ("developer", "business"):
+        return jsonify(error="Your account cannot remove hierarchy images."), 403
+    if not _can_access_business(business):
         return jsonify(error="Unknown business."), 404
     try:
         delete_hierarchy_object(_business_slug(business))
@@ -414,11 +670,18 @@ def delete_hierarchy_image(business):
 @app.post("/api/presentations")
 def upload_presentation():
     """Trainee presentation upload. PDF only, checked on the server too."""
+    if g.profile["role"] != "trainee":
+        return jsonify(error="Only the linked trainee can upload a presentation."), 403
     upload = request.files.get("file")
+    trainee_id = request.form.get("trainee_id", "").strip()
+    if trainee_id != g.profile.get("trainee_id"):
+        return jsonify(error="You can upload presentations only to your own trainee record."), 403
     try:
-        trainee_id = int(request.form.get("trainee_id", ""))
+        normalized_id = str(uuid.UUID(trainee_id))
         step = int(request.form.get("step", ""))
     except ValueError:
+        return jsonify(error="Invalid trainee or step."), 400
+    if normalized_id != trainee_id or step < 0:
         return jsonify(error="Invalid trainee or step."), 400
     if upload is None or not upload.filename:
         return jsonify(error="Select a PDF file to upload."), 400
@@ -433,9 +696,20 @@ def upload_presentation():
     if not data.startswith(b"%PDF-"):
         return jsonify(error="That file is not a valid PDF."), 400
 
-    with lock:
-        if not any(t.get("id") == trainee_id for t in read_data()):
-            return jsonify(error="Trainee not found."), 404
+    try:
+        trainee = (
+            g.database.client.table("trainees")
+            .select("id")
+            .eq("id", trainee_id)
+            .maybe_single()
+            .execute()
+            .data
+        )
+    except APIError:
+        app.logger.exception("Could not check presentation upload scope")
+        return jsonify(error="Could not verify access to this trainee."), 502
+    if not trainee:
+        return jsonify(error="Trainee not found or not in your scope."), 404
 
     try:
         upload_presentation_pdf(trainee_id, step, data)
@@ -448,8 +722,28 @@ def upload_presentation():
     return jsonify(ok=True, size=len(data))
 
 
-@app.get("/api/presentations/<int:trainee_id>/<int:step>")
+@app.get("/api/presentations/<trainee_id>/<int:step>")
 def view_presentation(trainee_id, step):
+    try:
+        normalized_id = str(uuid.UUID(trainee_id))
+    except ValueError:
+        return jsonify(error="Invalid trainee ID."), 400
+    if normalized_id != trainee_id or step < 0:
+        return jsonify(error="Invalid trainee or step."), 400
+    try:
+        trainee = (
+            g.database.client.table("trainees")
+            .select("id")
+            .eq("id", trainee_id)
+            .maybe_single()
+            .execute()
+            .data
+        )
+    except APIError:
+        app.logger.exception("Could not check presentation read scope")
+        return jsonify(error="Could not verify access to this trainee."), 502
+    if not trainee:
+        return jsonify(error="Trainee not found or not in your scope."), 404
     try:
         obj = get_presentation_object(trainee_id, step)
     except ClientError as exc:
@@ -497,6 +791,9 @@ def list_video_folders():
 
 @app.get("/api/video-folders")
 def list_video_parent_folders():
+    denied = _require_developer()
+    if denied:
+        return denied
     try:
         return jsonify(folders=get_parent_folders())
     except RuntimeError as exc:
@@ -509,6 +806,9 @@ def list_video_parent_folders():
 
 @app.post("/api/video-folders")
 def add_video_parent_folder():
+    denied = _require_developer()
+    if denied:
+        return denied
     data = request.get_json(silent=True)
     folder_name = data.get("folder", "") if isinstance(data, dict) else ""
     if not isinstance(folder_name, str):
@@ -583,6 +883,9 @@ def stream_video_object(object_key):
 
 @app.post("/api/video-uploads")
 def start_video_upload():
+    denied = _require_developer()
+    if denied:
+        return denied
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify(error="Invalid video upload details."), 400
@@ -648,6 +951,9 @@ def start_video_upload():
 
 @app.post("/api/video-uploads/<upload_id>/<int:chunk_index>")
 def upload_video_chunk(upload_id, chunk_index):
+    denied = _require_developer()
+    if denied:
+        return denied
     if request.content_length and request.content_length > UPLOAD_CHUNK_SIZE + 1024 * 1024:
         return jsonify(error="Upload chunk exceeds the 200 MB limit."), 413
 
@@ -694,6 +1000,9 @@ def upload_video_chunk(upload_id, chunk_index):
 
 @app.post("/api/video-uploads/<upload_id>/complete")
 def complete_video_upload(upload_id):
+    denied = _require_developer()
+    if denied:
+        return denied
     session_dir, metadata = _read_upload_session(upload_id)
     if session_dir is None:
         return jsonify(error="Video upload session not found."), 404
@@ -791,6 +1100,9 @@ def complete_video_upload(upload_id):
 
 @app.delete("/api/video-uploads/<upload_id>")
 def cancel_video_upload(upload_id):
+    denied = _require_developer()
+    if denied:
+        return denied
     session_dir = _upload_session_path(upload_id)
     if session_dir is None:
         return jsonify(error="Invalid video upload session."), 400
@@ -817,6 +1129,9 @@ def cancel_video_upload(upload_id):
 
 @app.post("/api/videos")
 def upload_video():
+    denied = _require_developer()
+    if denied:
+        return denied
     video = request.files.get("video")
     parent_folder = request.form.get("parent_folder", "")
     video_folder = request.form.get("video_folder", "").strip()
@@ -885,6 +1200,9 @@ def upload_video():
 
 @app.get("/api/video-jobs/<job_id>")
 def video_job_status(job_id):
+    denied = _require_developer()
+    if denied:
+        return denied
     with video_jobs_lock:
         job = video_jobs.get(job_id)
         job = dict(job) if job else None
@@ -900,6 +1218,9 @@ def video_job_status(job_id):
 
 @app.delete("/api/video-jobs/<job_id>")
 def cancel_video_job(job_id):
+    denied = _require_developer()
+    if denied:
+        return denied
     cancellation = _cancel_video_job(job_id)
     if cancellation is None:
         return jsonify(error="Video upload job not found."), 404

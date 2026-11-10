@@ -121,7 +121,7 @@ function mapModal(){
  </div></div>`;
 }
 function modal(t){
- if(S.acc)return accModal();
+ if(S.organization)return organizationModal();
  if(S.map)return mapModal();
  if(S.upload)return uploadModal();
  if(S.video)return videoModal();
@@ -148,23 +148,21 @@ const VID=ST.filter(x=>x.t==="VIDEO"),VT=VID.reduce((a,x)=>a+x.min,0),AT=ST.redu
 const mv=mi=>ST.filter(x=>x.m===mi&&x.t==="VIDEO").reduce((a,x)=>a+x.min,0);
 
 // ---- State
-const BIZ=["Magnus","Alims","M&D","Merchx"];
-const biz=t=>BIZ.includes(t.biz)?t.biz:"Magnus";
-let S={t:[],sel:null,upload:false,video:false,hls:null,view:"overview",bv:"overview",map:false,vmap:{},folders:[],mb:"Magnus",mm:0,mt:null,mf:"",mplay:"",mmsg:"",mfstat:"",himg:{},hmsg:{}};
+const BIZ=BUSINESSES;
+const biz=t=>t.biz||"";
+let S={t:[],sel:null,upload:false,video:false,hls:null,view:"overview",bv:"overview",map:false,organization:false,orgEntity:"business",orgParent:"",orgName:"",orgMsg:"",vmap:{},folders:[],mb:"Magnus",mm:0,mt:null,mf:"",mplay:"",mmsg:"",mfstat:"",himg:{},hmsg:{},user:null,options:{businesses:[],branches:[],departments:[],designations:[]},addBiz:"",addBranch:"",addDept:"",addDesg:"",addmsg:"",loginmsg:""};
 let activeVideoUpload=null;
-// ---- Login / roles (front end only; accounts and permissions live in config.js)
-const SESSION_KEY="mt_session";
-const arr=v=>[].concat(v==null||v===""?[]:v);
+// ---- Supabase Auth-backed roles
 const sameName=(a,b)=>String(a||"").trim().toLowerCase()===String(b||"").trim().toLowerCase();
 const allow=p=>!!(S.user&&ROLE_PERMS[S.user.role]&&ROLE_PERMS[S.user.role][p]);
-const canAddTrainee=()=>S.user&&(S.user.role==="department"?arr(S.user.dept).some(d=>sameName(d,"HR")):allow("add"));
-const ALLBIZ=u=>u.role==="developer"||u.role==="superadmin";
-const vbiz=()=>{const u=S.user;if(!u||u.role==="trainee")return[];if(ALLBIZ(u))return BIZ;const b=arr(u.business).filter(x=>BIZ.includes(x));return b.length?b:(u.role==="department"?BIZ:[])};
-const isOwn=t=>{const u=S.user;return !!u&&((u.traineeId!=null&&+u.traineeId===t.id)||(u.trainee!=null&&sameName(u.trainee,t.name)))};
+const canAddTrainee=()=>!!(allow("add")&&S.user&&["developer","business"].includes(S.user.role));
+const ALLBIZ=u=>u.role==="developer";
+const vbiz=()=>{const u=S.user;if(!u||u.role==="trainee")return[];if(ALLBIZ(u))return BIZ;return u.business&&u.business.name?[u.business.name]:[]};
+const isOwn=t=>!!(S.user&&S.user.trainee_id===t.id);
 const inScope=t=>{const u=S.user;if(!u)return false;
  if(ALLBIZ(u))return true;
- if(u.role==="admin")return vbiz().includes(biz(t));
- if(u.role==="department")return vbiz().includes(biz(t))&&arr(u.dept).some(d=>sameName(d,t.dept));
+ if(u.role==="business"||u.role==="business_view")return vbiz().includes(biz(t))
+  &&(!u.branch||u.branch.name===t.branch)&&(!u.department||u.department.name===t.dept);
  if(u.role==="trainee")return isOwn(t);
  return false};
 const scoped=()=>S.t.filter(inScope);
@@ -172,126 +170,49 @@ const ownRec=()=>S.t.find(isOwn)||null;
 const oneBiz=()=>vbiz().length===1;
 const roleLabel=()=>S.user?(ROLE_LABELS[S.user.role]||S.user.role):"";
 const scopeLabel=()=>{const u=S.user;if(!u)return"";if(ALLBIZ(u))return"All businesses";
- if(u.role==="admin")return vbiz().join(", ");
- if(u.role==="department")return(arr(u.business).length?vbiz().join(", ")+" · ":"")+arr(u.dept).join(", ");
+ if(u.business&&u.business.name)return [u.business.name,u.branch&&u.branch.name,u.department&&u.department.name].filter(Boolean).join(" · ");
  return""};
-const findUser=(n,p)=>USERS.find(u=>sameName(u.username,n)&&u.password===p);
-const initView=()=>{S.sel=null;S.vm=null;S.q="";S.bv="overview";S.modal=null;S.edit=false;S.add=false;S.upload=false;S.video=false;S.map=false;S.acc=false;S.accf=null;S.view=oneBiz()?vbiz()[0]:"overview"};
-function login(u,remember){
- S.user=u;try{(remember?localStorage:sessionStorage).setItem(SESSION_KEY,u.username)}catch(e){}
+const initView=()=>{S.sel=null;S.vm=null;S.q="";S.bv="overview";S.modal=null;S.edit=false;S.add=false;S.upload=false;S.video=false;S.map=false;S.organization=false;S.view=oneBiz()?vbiz()[0]:"overview"};
+async function login(username,password){
+ const response=await fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username,password})});
+ const result=await response.json().catch(()=>({}));
+ if(!response.ok)throw new Error(result.error||"Could not sign in.");
+ S.user=result.user;
+ S.loginmsg="";
+ await loadOptions();
+ await load();
  initView();render();
+ loadMap();loadHier();
 }
 function logout(){
  stopVideoPlayer();stopVideoPlayer("map-player");
- try{sessionStorage.removeItem(SESSION_KEY);localStorage.removeItem(SESSION_KEY)}catch(e){}
- S.user=null;initView();render();
+ fetch("/api/logout",{method:"POST"}).catch(()=>{});
+ S.user=null;S.t=[];S.loaded=false;initView();render();
 }
-(()=>{try{const o=JSON.parse(localStorage.getItem("mt_access")||"null");if(o&&Array.isArray(o.users)&&o.users.some(u=>u.role==="developer")){USERS.splice(0,USERS.length,...o.users);Object.keys(o.perms||{}).forEach(r=>{if(r!=="developer"&&ROLE_PERMS[r])Object.assign(ROLE_PERMS[r],o.perms[r])})}}catch(e){}})();
-(()=>{let n=null;try{n=sessionStorage.getItem(SESSION_KEY)||localStorage.getItem(SESSION_KEY)}catch(e){}
- const u=n&&USERS.find(x=>sameName(x.username,n));if(u){S.user=u;initView()}})();
-// ---- Users & permissions screen (developer). Changes are kept in this browser; "Download config.js" makes them permanent for everyone.
-const ACC_KEY="mt_access";
-const PERM_ROLES=["developer","superadmin","admin","department","trainee"];
-const accSave=()=>{try{localStorage.setItem(ACC_KEY,JSON.stringify({users:USERS,perms:ROLE_PERMS}))}catch(e){alert("Could not save the changes in this browser.")}};
-const scopeOf=u=>ALLBIZ(u)?"All businesses":u.role==="admin"?(arr(u.business).join(", ")||"–"):u.role==="department"?((arr(u.business).length?arr(u.business).join(", ")+" · ":"")+(arr(u.dept).join(", ")||"–")):(u.trainee||"–");
-function accForm(){
- const f=S.accf;if(!f)return"";
- const ck=(name,list,sel)=>`<div class="acc-cks">${list.map(x=>`<label class="acc-ck"><input type="checkbox" data-ck="${name}" value="${esc(x)}"${sel.includes(x)?" checked":""}> ${esc(x)}</label>`).join("")}</div>`;
- const names=[...new Set(S.t.map(t=>t.name).filter(Boolean))],tr=f.trainee&&!names.includes(f.trainee)?[f.trainee,...names]:names;
- return `<div class="card acc-form"><h2 style="font-size:1.125rem">${f.i<0?"Add user":"Edit user"}</h2><div class="fg"><label>Full name<input id="acc-name" value="${esc(f.name)}"></label><label>Username<input id="acc-user" value="${esc(f.username)}" autocomplete="off" autocapitalize="none"></label><label>Password<input id="acc-pass" value="${esc(f.password)}" autocomplete="off"></label><label>Role<select id="acc-role">${PERM_ROLES.map(r=>`<option value="${r}"${r===f.role?" selected":""}>${esc(ROLE_LABELS[r]||r)}</option>`).join("")}</select></label></div>`
- +(f.role==="admin"||f.role==="department"?`<div class="fl"><span>Business${f.role==="department"?" (leave empty = every business)":""}</span>${ck("biz",BIZ,f.business)}</div>`:"")
- +(f.role==="department"?`<div class="fl"><span>Department</span>${ck("dept",DEPTS,f.dept)}</div>`:"")
- +(f.role==="trainee"?`<label class="fl">Trainee<select id="acc-trainee"><option value="">Select trainee</option>${tr.map(n=>`<option${n===f.trainee?" selected":""}>${esc(n)}</option>`).join("")}</select></label>`:"")
- +`<div class="lg-err" role="alert">${esc(S.accmsg||"")}</div><div class="row" style="justify-content:flex-end"><button type="button" data-a="accformcancel">Cancel</button><button type="button" class="p" data-a="accsave">Save user</button></div></div>`;
-}
-function accModal(){
- const head=PERM_ROLES.map(r=>`<th>${esc(ROLE_LABELS[r]||r)}</th>`).join("");
- const rows=Object.keys(PERM_LABELS).map(p=>`<tr><td>${esc(PERM_LABELS[p])}</td>${PERM_ROLES.map(r=>`<td style="text-align:center"><input type="checkbox" class="acc-perm" data-r="${r}" data-p="${p}"${ROLE_PERMS[r]&&ROLE_PERMS[r][p]?" checked":""}${r==="developer"?" disabled":""} aria-label="${esc(PERM_LABELS[p]+" – "+(ROLE_LABELS[r]||r))}"></td>`).join("")}</tr>`).join("");
- const urows=USERS.map((u,i)=>`<tr><td>${esc(u.name||"")}</td><td>${esc(u.username)}</td><td>${esc(ROLE_LABELS[u.role]||u.role)}</td><td>${esc(scopeOf(u))}</td><td><div class="map-act"><button type="button" class="sm" data-a="accedit" data-i="${i}">Edit</button><button type="button" class="sm dgr" data-a="accdel" data-i="${i}">Delete</button></div></td></tr>`).join("");
- return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="acc-title"><div class="bd" data-a="acccancel"></div><div class="mb wide acc"><h2 id="acc-title">Users &amp; permissions</h2><div class="mu">Choose what each role can do, and manage the login accounts.</div>
- <h2 style="margin:18px 0 6px;font-size:1.125rem">Permissions by role</h2><div class="sc"><table><tr><th>Permission</th>${head}</tr>${rows}</table></div><div class="mu">Developer always keeps every permission. Changes apply straight away.</div>
- <div class="sp" style="margin:22px 0 6px"><h2 style="font-size:1.125rem;margin:0">Users</h2><button type="button" class="p sm" data-a="accadd">＋ Add user</button></div>${accForm()}<div class="sc"><table><tr><th>Name</th><th>Username</th><th>Role</th><th>Access</th><th></th></tr>${urows}</table></div>
- <div class="mu" style="margin-top:10px">Changes are saved in this browser only. Press “Download config.js” and replace <b>static/config.js</b> on the server so every device gets them.</div>
- <div class="row" style="margin-top:14px;justify-content:space-between"><div class="row"><button type="button" data-a="accdl">Download config.js</button><button type="button" class="dgr" data-a="accreset">Reset to config.js</button></div><button type="button" class="p" data-a="acccancel">Done</button></div></div></div>`;
-}
-function accExport(){
- const j=v=>JSON.stringify(v,null,2);
- const t="// Generated from Users & permissions on "+new Date().toLocaleString()+"\n// Replace static/config.js with this file to make the changes permanent for everyone.\n\n"
-  +"const DEPTS = "+j(DEPTS)+";\n\nconst BRANCHES = "+j(BRANCHES)+";\n\nconst BUSINESSES = "+j(BUSINESSES)+";\n\nconst SUBVIEWS = "+j(SUBVIEWS)+";\n\nconst ROLE_LABELS = "+j(ROLE_LABELS)+";\n\nconst PERM_LABELS = "+j(PERM_LABELS)+";\n\nconst ROLE_PERMS = "+j(ROLE_PERMS)+";\n\nconst USERS = "+j(USERS)+";\n";
- const u=URL.createObjectURL(new Blob([t],{type:"text/javascript"})),a=document.createElement("a");a.href=u;a.download="config.js";a.click();
-}
-function accAction(a,b){
- if(!allow("manage"))return;
- if(a==="accopen"){S.add=false;S.edit=false;S.modal=null;S.upload=false;S.video=false;S.map=false;S.acc=true;S.accf=null;S.accmsg=""}
- else if(a==="acccancel"){S.acc=false;S.accf=null;S.accmsg=""}
- else if(a==="accadd"){S.accf={i:-1,name:"",username:"",password:"",role:"trainee",business:[],dept:[],trainee:""};S.accmsg=""}
- else if(a==="accedit"){const i=+b.dataset.i,u=USERS[i];if(!u)return;S.accf={i,name:u.name||"",username:u.username,password:u.password,role:u.role,business:arr(u.business),dept:arr(u.dept),trainee:u.trainee||""};S.accmsg=""}
- else if(a==="accformcancel"){S.accf=null;S.accmsg=""}
- else if(a==="accdel"){
-  const i=+b.dataset.i,u=USERS[i];if(!u)return;
-  if(sameName(u.username,S.user.username))return alert("You cannot delete the account you are signed in with.");
-  if(u.role==="developer"&&USERS.filter(x=>x.role==="developer").length<2)return alert("There must be at least one developer account.");
-  if(!confirm("Delete the account \""+u.username+"\"?"))return;
-  USERS.splice(i,1);S.accf=null;accSave();
- }
- else if(a==="accsave"){
-  const f=S.accf;if(!f)return;const g=id=>(document.getElementById(id)||{}).value||"";
-  f.name=g("acc-name").trim();f.username=g("acc-user").trim();f.password=g("acc-pass");
-  let err="";
-  if(!f.name)err="Enter the full name.";
-  else if(!f.username)err="Enter a username.";
-  else if(/\s/.test(f.username))err="The username cannot contain spaces.";
-  else if(USERS.some((u,i)=>i!==f.i&&sameName(u.username,f.username)))err="That username is already used.";
-  else if(!f.password)err="Enter a password.";
-  else if(f.role==="admin"&&!f.business.length)err="Select at least one business for an admin.";
-  else if(f.role==="department"&&!f.dept.length)err="Select at least one department.";
-  else if(f.role==="trainee"&&!f.trainee)err="Select the trainee this account belongs to.";
-  else if(f.i>=0&&USERS[f.i].role==="developer"&&f.role!=="developer"&&USERS.filter(x=>x.role==="developer").length<2)err="There must be at least one developer account.";
-  if(err){S.accmsg=err;return render()}
-  const one=l=>l.length===1?l[0]:l,u={username:f.username,password:f.password,name:f.name,role:f.role};
-  if(f.role==="admin"||f.role==="department"){if(f.business.length)u.business=one(f.business)}
-  if(f.role==="department")u.dept=one(f.dept);
-  if(f.role==="trainee")u.trainee=f.trainee;
-  const wasMe=f.i>=0&&sameName(USERS[f.i].username,S.user.username);
-  if(f.i<0)USERS.push(u);else USERS[f.i]=u;
-  if(wasMe){S.user=u;for(const st of[sessionStorage,localStorage]){try{if(st.getItem(SESSION_KEY))st.setItem(SESSION_KEY,u.username)}catch(e){}}if(!allow("manage"))S.acc=false}
-  S.accf=null;S.accmsg="";accSave();
- }
- else if(a==="accdl")return accExport();
- else if(a==="accreset"){if(!confirm("Remove the changes saved in this browser and go back to the accounts and permissions in config.js? You will be signed out."))return;try{localStorage.removeItem(ACC_KEY)}catch(e){}location.reload();return}
- render();
-}
-document.addEventListener("input",e=>{const f=S.accf;if(!f)return;const id=e.target.id;if(id==="acc-name")f.name=e.target.value;else if(id==="acc-user")f.username=e.target.value;else if(id==="acc-pass")f.password=e.target.value});
-document.addEventListener("change",e=>{
- const el=e.target;if(!el.classList)return;
- if(el.classList.contains("acc-perm")){const r=el.dataset.r,p=el.dataset.p;if(r==="developer"||!allow("manage")||!ROLE_PERMS[r])return;ROLE_PERMS[r][p]=el.checked?1:0;accSave();render();return}
- const f=S.accf;if(!f)return;
- if(el.id==="acc-role"){f.role=el.value;S.accmsg="";render()}
- else if(el.id==="acc-trainee")f.trainee=el.value;
- else if(el.dataset.ck){const k=el.dataset.ck==="biz"?"business":"dept";f[k]=el.checked?[...f[k],el.value]:f[k].filter(x=>x!==el.value)}
-});
 function renderLogin(){
  const ap=document.getElementById("app");S.lv=null;
  if(ap.querySelector(".lgn"))return; // keep what the person has typed
  ap.classList.remove("an");
- ap.innerHTML=`<div class="lgn"><form class="card lgc" id="login-form"><div class="bk"><div class="lg">M</div><div><div class="brand">Magnus</div><div class="mu">Trainee Tracker</div></div></div><div><h1>Sign in</h1><div class="mu" style="margin-top:4px">Use the account given to you by your administrator.</div></div><label class="fl">Username<input id="lg-u" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required></label><label class="fl">Password<input id="lg-p" name="password" type="password" autocomplete="current-password" required></label><label class="lg-rm"><input type="checkbox" id="lg-r"> Keep me signed in on this device</label><div id="lg-e" class="lg-err" role="alert" aria-live="polite"></div><button class="p" type="submit">Sign in</button></form></div>`;
- const u=document.getElementById("lg-u");if(u)u.focus();
+ ap.innerHTML=`<div class="lgn"><form class="card lgc" id="login-form"><div class="bk"><div class="lg">M</div><div><div class="brand">Magnus</div><div class="mu">Trainee Tracker</div></div></div><div><h1>Sign in</h1><div class="mu" style="margin-top:4px">Use your developer username or Supabase Auth email.</div></div><label class="fl">Username or email<input id="lg-username" name="username" autocomplete="username" required></label><label class="fl">Password<input id="lg-p" name="password" type="password" autocomplete="current-password" required></label><div id="lg-e" class="lg-err" role="alert" aria-live="polite">${esc(S.loginmsg)}</div><button class="p" type="submit">Sign in</button></form></div>`;
+ const username=document.getElementById("lg-username");if(username)username.focus();
 }
 document.addEventListener("submit",e=>{
  if(e.target.id!=="login-form")return;
  e.preventDefault();
- const p=document.getElementById("lg-p"),er=document.getElementById("lg-e"),u=findUser(document.getElementById("lg-u").value,p.value);
- if(!u){er.textContent="Incorrect username or password.";p.value="";p.focus();return}
- login(u,document.getElementById("lg-r").checked);
+ const button=e.target.querySelector('button[type="submit"]'),er=document.getElementById("lg-e");
+ button.disabled=true;er.textContent="";
+ login(document.getElementById("lg-username").value.trim(),document.getElementById("lg-p").value)
+  .catch(error=>{er.textContent=error instanceof Error?error.message:String(error)})
+  .finally(()=>{if(button.isConnected)button.disabled=false});
 });
 // ---- Video map: business -> {"moduleIndex|task title": "video folder"}
 const mkey=i=>ST[i].m+"|"+ST[i].n;
 const vfolder=(b,i)=>(S.vmap[b]||{})[mkey(i)]||"";
 const mvideos=mi=>ST.map((x,i)=>({x,i})).filter(o=>o.x.m===mi&&o.x.t==="VIDEO");
 const loadMap=()=>fetch("/api/video-map").then(r=>r.json()).then(d=>{if(d&&typeof d==="object"&&!d.error)S.vmap=d}).catch(()=>{});
-// Data is stored on the Python server (data.json) through /api/trainees
-const load=()=>fetch("/api/trainees").then(r=>r.json()).then(d=>{if(!Array.isArray(d))throw new Error("bad data");S.t=d;S.loaded=true}).catch(()=>alert("Cannot reach the server. Is app.py running?"));
-const save=()=>S.loaded?fetch("/api/trainees",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(S.t)}).catch(()=>alert("Could not save. Is app.py running?")):Promise.resolve();
+const loadOptions=()=>fetch("/api/options").then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error||"Could not load organization options.");S.options=d;BUSINESSES.splice(0,BUSINESSES.length,...d.businesses.map(x=>x.name));BRANCHES.splice(0,BRANCHES.length,...[...new Set(d.branches.map(x=>x.name))]);DEPTS.splice(0,DEPTS.length,...[...new Set(d.departments.map(x=>x.name))])});
+const load=()=>fetch("/api/trainees").then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error||"Could not load trainees.");if(!Array.isArray(d))throw new Error("The server returned invalid trainee data.");S.t=d;S.loaded=true});
+const save=()=>S.loaded?fetch("/api/trainees",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(S.t)}).then(async r=>{const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"Could not save trainee data.");return d}).catch(error=>{alert(error instanceof Error?error.message:String(error));return load().then(render).catch(loadError=>alert(loadError instanceof Error?loadError.message:String(loadError)))}):Promise.resolve();
 const now=()=>new Date().toISOString();
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const fmt=i=>i?new Date(i).toLocaleString([], {dateStyle:"medium",timeStyle:"short"}):"–";
@@ -339,21 +260,87 @@ function render(){
 function side(t){
  const brand=`<div class="bk"><div class="lg">M</div><div><div class="brand">Magnus</div><div class="mu">Trainee Tracker</div></div></div>`;
  const foot=`<div class="sf"><span class="mu">Theme</span>${tbtn()}</div>`;
- const who=`<div class="who"><div class="who-n">${esc(S.user.name||S.user.username)}</div><div class="mu">${esc(roleLabel())}${scopeLabel()?" · "+esc(scopeLabel()):""}</div><div class="who-b">${allow("manage")?'<button type="button" class="sm" data-a="accopen">Users &amp; permissions</button>':""}<button type="button" class="sm" data-a="logout">Sign out</button></div></div>`;
+ const who=`<div class="who"><div class="who-n">${esc(S.user.full_name||roleLabel())}</div><div class="mu">${esc(roleLabel())}${scopeLabel()?" · "+esc(scopeLabel()):""}</div><div class="who-b"><button type="button" class="sm" data-a="logout">Sign out</button></div></div>`;
  const B=(p,h)=>allow(p)?h:"";
+ const orgButton=canManageOrganization()?'<button data-a="orgopen">Manage organization</button>':"";
  if(!t)return `<aside class="sb">${brand}${who}
   ${S.user.role==="trainee"?"":`<label class="fl sq"><span>Search</span><input id="q" type="search" value="${esc(S.q||"")}" placeholder="Name, department, designation…" autocomplete="off"></label>`}
-  ${canAddTrainee()?'<button class="p" data-a="addopen">＋ Add trainee</button>':""}${B("upload",'<button data-a="uploadopen">↑ Upload video</button>')}${B("watch",'<button data-a="videoopen">▶ Watch video</button>')}${B("map",'<button data-a="mapopen">🔗 Map videos</button>')}${B("csv",'<button data-a="csv">Export CSV</button>')}
+  ${canAddTrainee()?'<button class="p" data-a="addopen">＋ Add trainee</button>':""}${orgButton}${B("upload",'<button data-a="uploadopen">↑ Upload video</button>')}${B("watch",'<button data-a="videoopen">▶ Watch video</button>')}${B("map",'<button data-a="mapopen">🔗 Map videos</button>')}${B("csv",'<button data-a="csv">Export CSV</button>')}
   <div class="sg"></div>
   <div class="sd"><span class="mu">Training duration</span><b>${hm(AT)}</b><span class="mu">${ST.length} steps · ${hm(VT)} of video (${VID.length} videos)</span></div>${foot}</aside>`;
  return `<aside class="sb">${brand}${who}
-  ${S.user.role==="trainee"?"":'<button data-a="back">← All trainees</button>'}${B("upload",'<button data-a="uploadopen">↑ Upload video</button>')}${B("watch",'<button data-a="videoopen">▶ Watch video</button>')}${B("map",'<button data-a="mapopen">🔗 Map videos</button>')}${B("ename",'<button data-a="ename">✎ Edit name</button>')}${B("del",`<button class="dgr" data-a="del" data-id="${t.id}">Remove trainee</button>`)}
+  ${S.user.role==="trainee"?"":'<button data-a="back">← All trainees</button>'}${orgButton}${B("upload",'<button data-a="uploadopen">↑ Upload video</button>')}${B("watch",'<button data-a="videoopen">▶ Watch video</button>')}${B("map",'<button data-a="mapopen">🔗 Map videos</button>')}${B("ename",'<button data-a="ename">✎ Edit name</button>')}${B("del",`<button class="dgr" data-a="del" data-id="${t.id}">Remove trainee</button>`)}
   <div class="sg"></div>
   <div class="sd"><span class="mu">Viewing</span><b>${esc(t.name)}</b></div>${foot}</aside>`;
 }
 // ---- Trainee cards, filtered by the search box (name, department, designation, branch)
 const filtered=()=>{const q=(S.q||"").trim().toLowerCase();return scoped().filter(t=>(S.view==="overview"||biz(t)===S.view)&&[t.name,t.dept,t.desg,t.branch,biz(t)].some(v=>String(v||"").toLowerCase().includes(q)))};
-const addDepts=()=>{const u=S.user;if(u&&u.role==="department")return DEPTS.filter(d=>sameName(d,"HR")&&arr(u.dept).some(x=>sameName(x,d)));return DEPTS};
+const addBranches=(business=S.addBiz)=>{const org=S.options.businesses.find(x=>x.name===business);return S.options.branches.filter(x=>org&&x.business_id===org.id)};
+const addDepts=()=>{const branch=addBranches().find(x=>x.name===S.addBranch);return S.options.departments.filter(x=>branch&&x.branch_id===branch.id)};
+const addDesignations=()=>{const dept=addDepts().find(x=>x.name===S.addDept);return S.options.designations.filter(x=>dept&&x.department_id===dept.id)};
+const canManageOrganization=()=>!!(S.user&&S.user.role==="developer");
+const addOrgOption=entity=>canManageOrganization()?`<option value="__add_${entity}__">＋ Add ${entity}</option>`:"";
+const addSelectOptions=(items,selected,value,label,emptyLabel,entity)=>{
+ const placeholder=items.length?"":`<option value="" selected disabled>${emptyLabel}</option>`;
+ return placeholder+items.map(item=>`<option value="${esc(value(item))}"${value(item)===selected?" selected":""}>${esc(label(item))}</option>`).join("")+addOrgOption(entity);
+};
+const addCategoryPanel=entity=>`<div id="add-category-${entity}" data-add-category-panel="${entity}" hidden><label class="fl">New ${entity} name<input id="add-category-name-${entity}" maxlength="120" placeholder="Enter ${entity} name"></label><div id="add-category-status-${entity}" class="lg-err" role="status"></div><div class="row"><button type="button" data-a="category-cancel" data-entity="${entity}">Cancel</button><button type="button" class="p" data-a="category-create" data-entity="${entity}">Add ${entity}</button></div></div>`;
+const addBranchParent=()=>{const business=S.options.businesses.find(x=>x.name===S.addBiz);return business?business.id:""};
+const addDepartmentParent=()=>{const branch=addBranches().find(x=>x.name===S.addBranch);return branch?branch.id:""};
+const addDesignationParent=()=>{const department=addDepts().find(x=>x.name===S.addDept);return department?department.id:""};
+const organizationParents=entity=>{
+ if(entity==="branch")return S.options.businesses.map(x=>({id:x.id,label:x.name}));
+ if(entity==="department")return S.options.branches.map(branch=>{
+  const business=S.options.businesses.find(x=>x.id===branch.business_id);
+  return{id:branch.id,label:[business&&business.name,branch.name].filter(Boolean).join(" · ")};
+ });
+ if(entity==="designation")return S.options.departments.map(department=>{
+  const branch=S.options.branches.find(x=>x.id===department.branch_id);
+  const business=branch&&S.options.businesses.find(x=>x.id===branch.business_id);
+  return{id:department.id,label:[business&&business.name,branch&&branch.name,department.name].filter(Boolean).join(" · ")};
+ });
+ return[];
+};
+function openOrganization(entity,parentId=""){
+ if(!canManageOrganization())return;
+ S.organization=true;S.orgEntity=entity;S.orgParent=parentId||(organizationParents(entity)[0]||{}).id||"";S.orgName="";S.orgMsg="";render();
+}
+function organizationModal(){
+ const labels={business:"Business",branch:"Branch",department:"Department",designation:"Designation"};
+ const parents=organizationParents(S.orgEntity);
+ const parent=S.orgEntity==="business"?"":`<label class="fl">Under<select id="org-parent">${parents.map(x=>`<option value="${esc(x.id)}"${x.id===S.orgParent?" selected":""}>${esc(x.label)}</option>`).join("")}</select></label>`;
+ return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="org-title"><div class="bd" data-a="orgclose"></div><div class="mb"><h2 id="org-title">Manage organization</h2><label class="fl">Record type<select id="org-entity">${Object.entries(labels).map(([key,label])=>`<option value="${key}"${key===S.orgEntity?" selected":""}>${label}</option>`).join("")}</select></label>${parent}<label class="fl">${labels[S.orgEntity]} name<input id="org-name" value="${esc(S.orgName)}" maxlength="120"></label><div class="lg-err" role="status">${esc(S.orgMsg)}</div><div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="orgclose">Close</button><button type="button" class="p" data-a="orgcreate"${S.orgEntity!=="business"&&!parents.length?" disabled":""}>Create ${labels[S.orgEntity]}</button></div></div></div>`;
+}
+async function createOrganizationRecord(){
+ const entity=S.orgEntity,parentId=S.orgParent;
+ const name=(document.getElementById("org-name").value||"").trim();
+ if(!name){S.orgMsg="Enter a name.";render();return}
+ if(S.orgEntity!=="business"&&!S.orgParent){S.orgMsg="Choose a parent organization.";render();return}
+ try{
+  const response=await fetch("/api/organization",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({entity:S.orgEntity,name,parent_id:S.orgParent||null})});
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(result.error||"Could not create the organization record.");
+  S.orgName="";
+  S.orgMsg=`Created ${S.orgEntity} "${name}".`;
+  try{
+   await loadOptions();
+   if(S.add){
+    if(entity==="business"){S.addBiz=name;S.addBranch="";S.addDept="";S.addDesg=""}
+    if(entity==="branch"){
+     const business=S.options.businesses.find(x=>x.id===parentId);
+     S.addBiz=business?business.name:S.addBiz;S.addBranch=name;S.addDept="";S.addDesg="";
+    }
+    if(entity==="department"){
+     const branch=S.options.branches.find(x=>x.id===parentId);
+     const business=branch&&S.options.businesses.find(x=>x.id===branch.business_id);
+     S.addBiz=business?business.name:S.addBiz;S.addBranch=branch?branch.name:S.addBranch;S.addDept=name;S.addDesg="";
+    }
+    if(entity==="designation")S.addDesg=name;
+   }
+  }catch(error){S.orgMsg+=` The record was created, but organization options could not refresh: ${error instanceof Error?error.message:String(error)}`}
+ }catch(error){S.orgMsg=error instanceof Error?error.message:String(error)}
+ render();
+}
 const emptyMsg=()=>S.user&&S.user.role==="trainee"?"No trainee record is linked to this account. Please ask your administrator to check your login.":scoped().length?"No trainees match your search.":canAddTrainee()?"No trainees yet. Use “Add trainee” in the sidebar.":"No trainees to show yet.";
 function tcards(){
  const q=(S.q||"").trim().toLowerCase(),L=filtered();
@@ -435,7 +422,54 @@ function list(){
 }
 // ---- Add trainee pop-up form
 function addModal(){
- return `<div class="ov" role="dialog" aria-modal="true"><div class="bd" data-a="mcancel"></div><div class="mb wide"><h2 style="margin-top:2px">Add trainee</h2><div class="fg"><label>Trainee name<input id="nm" placeholder="Full name"></label><label>Joining date<input id="jd" type="date" value="${new Date().toISOString().slice(0,10)}"></label><label>Business<select id="bz">${vbiz().map(b=>`<option${b===(S.view!=="overview"?S.view:"Magnus")?" selected":""}>${esc(b)}</option>`).join("")}</select></label><label>Branch<select id="br"><option value="">Select branch</option>${BRANCHES.map(b=>`<option>${b}</option>`).join("")}</select></label><label>Department<select id="dp">${addDepts().map(d=>`<option>${esc(d)}</option>`).join("")}</select></label><label>Designation<input id="ds" placeholder="e.g. Trainee Counsellor"></label><label>Salary (₹ per month)<input id="sl" type="number" min="0" inputmode="numeric" placeholder="0"></label><label>Wage (₹ per day)<input id="wg" type="number" min="0" inputmode="numeric" placeholder="0"></label></div><div class="mu" style="margin-top:12px">Step 1 is assigned right now. Each next step unlocks only after the previous one is completed and verified.</div><div class="row" style="margin-top:16px;justify-content:flex-end"><button data-a="mcancel">Cancel</button><button class="p" data-a="add">Add trainee &amp; assign Step 1</button></div></div></div>`;
+ const branches=addBranches(),departments=addDepts(),designations=addDesignations();
+ const draft=S.addDraft||{};
+ return `<div class="ov" role="dialog" aria-modal="true"><div class="bd" data-a="mcancel"></div><div class="mb wide"><h2 style="margin-top:2px">Add trainee</h2><div class="fg"><label>Trainee name<input id="nm" placeholder="Full name" value="${esc(draft.name||"")}"></label><label>Joining date<input id="jd" type="date" value="${esc(draft.date||new Date().toISOString().slice(0,10))}"></label><div><label>Business<select id="bz">${addSelectOptions(vbiz(),S.addBiz,x=>x,x=>x,"Choose business…","business")}</select></label>${addCategoryPanel("business")}</div><div><label>Branch<select id="br">${addSelectOptions(branches,S.addBranch,x=>x.name,x=>x.name,"Choose branch…","branch")}</select></label>${addCategoryPanel("branch")}</div><div><label>Department<select id="dp">${addSelectOptions(departments,S.addDept,x=>x.name,x=>x.name,"Choose department…","department")}</select></label>${addCategoryPanel("department")}</div><div><label>Designation<select id="ds">${addSelectOptions(designations,S.addDesg,x=>x.title,x=>x.title,"Choose designation…","designation")}</select></label>${addCategoryPanel("designation")}</div><label>Salary (₹ per month)<input id="sl" type="number" min="0" inputmode="numeric" placeholder="0" value="${esc(draft.salary||"")}"></label><label>Wage (₹ per day)<input id="wg" type="number" min="0" inputmode="numeric" placeholder="0" value="${esc(draft.wage||"")}"></label></div><div class="lg-err" role="status">${esc(S.addmsg||"")}</div><div class="mu" style="margin-top:12px">To add a missing category, choose “＋ Add …”, enter its name here, and click Add. Step 1 is assigned right now. Each next step unlocks only after the previous one is completed and verified.</div><div class="row" style="margin-top:16px;justify-content:flex-end"><button data-a="mcancel">Cancel</button><button class="p" data-a="add"${branches.length&&departments.length&&designations.length?"":" disabled"}>Add trainee &amp; assign Step 1</button></div></div></div>`;
+}
+function showAddCategory(entity){
+ if(!canManageOrganization())return;
+ document.querySelectorAll("[data-add-category-panel]").forEach(panel=>{panel.hidden=panel.dataset.addCategoryPanel!==entity});
+ const selects={business:"bz",branch:"br",department:"dp",designation:"ds"};
+ const selected={business:S.addBiz,branch:S.addBranch,department:S.addDept,designation:S.addDesg};
+ const select=document.getElementById(selects[entity]);
+ if(select)select.value=selected[entity]||"";
+ const input=document.getElementById(`add-category-name-${entity}`);
+ if(input)input.focus();
+}
+async function createAddCategory(entity){
+ if(!canManageOrganization())return;
+ const labels={business:"Business",branch:"Branch",department:"Department",designation:"Designation"};
+ if(!Object.prototype.hasOwnProperty.call(labels,entity))return;
+ const input=document.getElementById(`add-category-name-${entity}`);
+ const status=document.getElementById(`add-category-status-${entity}`);
+ const submit=document.querySelector(`[data-a="category-create"][data-entity="${entity}"]`);
+ const name=(input.value||"").trim();
+ if(!name){status.textContent=`Enter a ${entity} name.`;input.focus();return}
+ const parents={branch:addBranchParent,department:addDepartmentParent,designation:addDesignationParent};
+ const parentId=parents[entity]?parents[entity]():null;
+ if(entity!=="business"&&!parentId){status.textContent=`Select a ${entity==="branch"?"business":entity==="department"?"branch":"department"} first.`;return}
+ submit.disabled=true;
+ status.textContent=`Adding ${entity}…`;
+ try{
+  const response=await fetch("/api/organization",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({entity,name,parent_id:parentId})});
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(result.error||`Could not add ${entity}.`);
+  try{
+   await loadOptions();
+  }catch(error){
+   throw new Error(`${labels[entity]} was created, but the dropdowns could not refresh: ${error instanceof Error?error.message:String(error)}`);
+  }
+  if(entity==="business"){S.addBiz=name;S.addBranch="";S.addDept="";S.addDesg=""}
+  if(entity==="branch"){S.addBranch=name;S.addDept="";S.addDesg=""}
+  if(entity==="department"){S.addDept=name;S.addDesg=""}
+  if(entity==="designation")S.addDesg=name;
+  S.addmsg="";
+  render();
+ }catch(error){
+  status.textContent=error instanceof Error?error.message:String(error);
+ }finally{
+  if(submit.isConnected)submit.disabled=false;
+ }
 }
 function detail(t){
  const l=cur(t),[s,c]=status(t);let rows="",lm=-1;const[vm,sm]=vmod(t);
@@ -446,15 +480,28 @@ function detail(t){
   const st=g?(g.vt?'<span class="ok">Verified</span>':g.c?'<span class="wa">Awaiting verify</span>':g.st?'<span class="wa">In progress</span>':'<span class="wa">Assigned</span>'):"Locked";
   rows+=`<tr class="${g?"":"lkd"}"><td>${i+1}</td><td>${x.t}</td><td>${esc(x.n)}${g&&x.t==="VIDEO"&&vfolder(biz(t),i)?` <button type="button" class="sm" data-a="watchstep" data-s="${i}">▶ Watch</button>`:""}</td><td>${x.d}</td><td>${x.by}</td><td>${g?fmt(g.st):"–"}</td><td>${g?fmt(g.c):"–"}</td><td>${g&&g.vt?esc(g.v):"–"}</td><td>${g?took(g.st||g.a,g.c):"–"}</td><td>${st}</td></tr>`});
  const vn=ST.filter(x=>x.m===vm),vd=vn.filter(x=>t.logs.some(g=>g.vt&&ST[g.s]===x)).length,w=waiting(t),can=w!=null&&ST[w].m===vm+1;
-const nav=`<div class="navbar"><button class="gh" data-a="prev" ${vm<=0?"disabled":""}>‹ Previous</button><div class="nv"><b>${MODS[vm].n}</b><span class="mu">${vd}/${vn.length} verified · ${hm(vn.reduce((z,x)=>z+x.mn,0))} planned</span></div><button class="${can?"p":"gh"}" data-a="next" ${vm<sm||can?"":"disabled"}>${can?"Start "+mshort(w)+" ›":"Next ›"}</button></div>${vm===sm&&vm+1<MODS.length&&!can?`<div class="mu" style="margin-top:8px;text-align:right">The next module unlocks once this one is fully verified.</div>`:""}`;
+const nav=`<div class="navbar"><button class="gh" data-a="prev" ${vm<=0?"disabled":""}>‹ Previous</button><div class="nv"><b>${MODS[vm].n}</b><span class="mu">${vd}/${vn.length} verified · ${hm(vn.reduce((z,x)=>z+x.mn,0))} planned</span></div><button class="${can?"p":"gh"}" data-a="next" ${!allow("work")||!(vm<sm||can)?"disabled":""}>${can?"Start "+mshort(w)+" ›":"Next ›"}</button></div>${vm===sm&&vm+1<MODS.length&&!can?`<div class="mu" style="margin-top:8px;text-align:right">The next module unlocks once this one is fully verified.</div>`:""}`;
  let act="";
- if(l){const x=ST[l.s];act=`<div class="card cur"><div class="mu">Current · Step ${l.s+1} of ${ST.length} · ${MODS[x.m].n}</div>
+ if(l){
+  const x=ST[l.s];
+  const activity=l.c
+   ?`<div class="mu" style="margin-bottom:8px">Completed ${fmt(l.c)}.${l.pdf?` Presentation: ${pdfLink(t,l)}.`:""} ${l.s+1<ST.length&&ST[l.s+1].m!==x.m?"This is the last step of the module; the next module starts only when you press Start.":"Verification will assign the next step."}</div>`
+   :l.st
+    ?`<div class="mu" style="margin-bottom:8px">Assigned ${fmt(l.st)}</div>`
+    :`<div class="mu" style="margin-bottom:8px">Assigned but not started. Time is counted only from when you press Start.</div>`;
+  const actions=l.c
+   ?allow("verify")
+    ?`<div class="row"><input id="vb" value="${esc(S.user.full_name||"")}" placeholder="Verified by (${esc(x.by)} – name)"><button class="p" data-a="ver">Verify &amp; assign next</button></div>`
+    :'<div class="mu">Waiting for a verifier to review this step.</div>'
+   :l.st
+    ?(allow("work")&&needsPdf(x)?pdfUi(t,l)+(l.pdf?"":`<div class="mu" style="margin-bottom:8px">Upload your presentation (PDF) to enable completion.</div>`):"")+(allow("work")?`<button class="p" data-a="cmp" ${needsPdf(x)&&!l.pdf?"disabled":""}>Mark completed now</button>`:"")
+    :allow("work")?'<button class="p" data-a="go">▶ Start task</button>':"";
+  act=`<div class="card cur"><div class="mu">Current · Step ${l.s+1} of ${ST.length} · ${MODS[x.m].n}</div>
  <h2 style="margin-top:4px"><span class="chip">${x.t}</span> ${esc(x.n)}</h2>
- <div class="mu">Duration ${x.d} · Monitored by ${x.by}</div>${x.t==="VIDEO"&&vfolder(biz(t),l.s)?`<div style="margin-top:10px"><button type="button" class="sm gh" data-a="watchstep" data-s="${l.s}">▶ Watch this video</button></div>`:""}<div style="margin-top:10px">
- ${l.c?`<div class="mu" style="margin-bottom:8px">Completed ${fmt(l.c)}.${l.pdf?` Presentation: ${pdfLink(t,l)}.`:""} ${l.s+1<ST.length&&ST[l.s+1].m!==x.m?"This is the last step of the module; the next module starts only when you press Start.":"Verification will assign the next step."}</div>
- ${allow("verify")?`<div class="row"><input id="vb" value="${esc(S.user.name||"")}" placeholder="Verified by (${esc(x.by)} – name)"><button class="p" data-a="ver">Verify &amp; assign next</button></div>`:'<div class="mu">Waiting for a verifier to review this step.</div>'}`
- :l.st?`<div class="mu" style="margin-bottom:8px">Assigned ${fmt(l.st)}</div>${needsPdf(x)?pdfUi(t,l)+(l.pdf?"":`<div class="mu" style="margin-bottom:8px">Upload your presentation (PDF) to enable completion.</div>`):""}<button class="p" data-a="cmp" ${needsPdf(x)&&!l.pdf?"disabled":""}>Mark completed now</button>`:`<div class="mu" style="margin-bottom:8px">Assigned but not started. Time is counted only from when you press Start.</div><button class="p" data-a="go">▶ Start task</button>`}</div></div>`}
- else if(waiting(t)!=null){const w=waiting(t),y=ST[w];act=`<div class="card cur"><div class="mu">${MODS[ST[w-1].m].n} finished and verified</div><h2 style="margin-top:4px">Next: ${MODS[y.m].n}</h2><div class="mu" style="margin-bottom:10px">First step: ${esc(y.n)} (${y.d}). Time is counted only from when you press Start.</div><button class="p" data-a="start">▶ Start ${mshort(w)}</button></div>`}
+ <div class="mu">Duration ${x.d} · Monitored by ${x.by}</div>${x.t==="VIDEO"&&vfolder(biz(t),l.s)?`<div style="margin-top:10px"><button type="button" class="sm gh" data-a="watchstep" data-s="${l.s}">▶ Watch this video</button></div>`:""}
+ <div style="margin-top:10px">${activity}${actions}</div></div></div>`;
+ }
+ else if(waiting(t)!=null){const w=waiting(t),y=ST[w];act=`<div class="card cur"><div class="mu">${MODS[ST[w-1].m].n} finished and verified</div><h2 style="margin-top:4px">Next: ${MODS[y.m].n}</h2><div class="mu" style="margin-bottom:10px">First step: ${esc(y.n)} (${y.d}). Time is counted only from when you press Start.</div>${allow("work")?`<button class="p" data-a="start">▶ Start ${mshort(w)}</button>`:""}</div>`}
  else act=`<div class="card cur ok"><b>All ${ST.length} steps completed and verified 🎉</b></div>`;
  return `<div class="card"><div class="sp"><h1>${esc(t.name)}</h1><span class="chip ${c}">${s}</span></div>
  <div class="dg">${info(t).map(x=>`<div><span class="mu">${x[0]}</span><b>${x[1]}</b></div>`).join("")}</div>${seg(t)}<div class="mu">${done(t)}/${ST.length} verified · Videos done: ${hm(t.logs.filter(l=>l.vt&&ST[l.s].t==="VIDEO").reduce((a,l)=>a+ST[l.s].min,0))} of ${hm(VT)}</div></div>
@@ -465,26 +512,39 @@ const nav=`<div class="navbar"><button class="gh" data-a="prev" ${vm<=0?"disable
 document.addEventListener("click",e=>{
  const b=e.target.closest("[data-a]");if(!b)return;const a=b.dataset.a,t=S.t.find(x=>x.id===S.sel);
  if(a==="logout")return logout();
+ if(["cmp","go","start","next"].includes(a)&&!allow("work"))return;
  const NEED={addopen:"add",add:"add",del:"del",ename:"ename",esave:"ename",uploadopen:"upload",hyremove:"hier",ver:"verify",score:"score",msave:"score",csv:"csv"};
- if(a.startsWith("acc"))return accAction(a,b);
+ if(a.startsWith("org")&&!canManageOrganization())return;
+ if(a==="category-create")return createAddCategory(b.dataset.entity);
+ if(a==="category-cancel"){
+  document.querySelectorAll("[data-add-category-panel]").forEach(panel=>{panel.hidden=true});
+  const selects={business:"bz",branch:"br",department:"dp",designation:"ds"};
+  const selected={business:S.addBiz,branch:S.addBranch,department:S.addDept,designation:S.addDesg};
+  const select=document.getElementById(selects[b.dataset.entity]);
+  if(select)select.value=selected[b.dataset.entity]||"";
+  const input=document.getElementById(`add-category-name-${b.dataset.entity}`);
+  const status=document.getElementById(`add-category-status-${b.dataset.entity}`);
+  if(input)input.value="";
+  if(status)status.textContent="";
+  return;
+ }
  if(a.startsWith("map")&&!allow("map"))return;
  if(NEED[a]&&(NEED[a]==="add"?!canAddTrainee():!allow(NEED[a])))return;
- if(a==="open"){const o=S.t.find(x=>x.id===+b.dataset.id);if(!o||!inScope(o))return}
+ if(a==="open"){const o=S.t.find(x=>x.id===b.dataset.id);if(!o||!inScope(o))return}
  if(a==="openbiz"&&!vbiz().includes(b.dataset.b))return;
  if(a==="allbiz"&&oneBiz())return;
  if(a==="back"&&S.user.role==="trainee")return;
  if(a.startsWith("map")){return mapAction(a,b)}
  if(a==="hyremove")return hierRemove(b.dataset.b);
  if(a==="add"){const n=document.getElementById("nm").value.trim();if(!n)return document.getElementById("nm").focus();
-  const d=now(),g=i=>document.getElementById(i).value.trim(),business=g("bz"),department=g("dp");
-  if(!vbiz().includes(business)||!addDepts().some(x=>sameName(x,department)))return;
-  const dpt=addDepts().find(x=>sameName(x,department));
-  S.t.push({id:Date.now(),biz:business,name:n,dept:dpt,branch:g("br"),desg:g("ds"),join:g("jd"),sal:g("sl"),wage:g("wg"),start:d,logs:[{s:0,a:d}]});S.add=false}
+  const d=now(),g=i=>document.getElementById(i).value.trim(),business=g("bz"),department=g("dp"),branch=g("br"),designation=g("ds");
+  if(!vbiz().includes(business)||!addDepts().some(x=>sameName(x.name,department))||!addBranches(business).some(x=>sameName(x.name,branch))||!addDesignations().some(x=>sameName(x.title,designation))){S.addmsg="Choose an available business, branch, department, and designation.";render();return}
+  S.t.push({id:crypto.randomUUID(),biz:business,name:n,dept:department,branch:branch,desg:designation,join:g("jd"),sal:g("sl"),wage:g("wg"),start:d,logs:[{s:0,a:d}]});S.add=false;S.addmsg=""}
  else if(a==="openbiz"){S.view=b.dataset.b;S.bv="overview";S.q=""}
  else if(a==="allbiz"){S.view="overview";S.bv="overview";S.q=""}
- else if(a==="open"){S.sel=+b.dataset.id;S.vm=null;S.modal=null;S.edit=false}
+ else  if(a==="open"){S.sel=b.dataset.id;S.vm=null;S.modal=null;S.edit=false}
  else if(a==="back"){S.sel=null;S.modal=null;S.edit=false}
- else if(a==="del"){if(!confirm("Remove this trainee and all their records?"))return;S.t=S.t.filter(x=>x.id!==+b.dataset.id);S.sel=null}
+ else if(a==="del"){if(!confirm("Remove this trainee and all their records?"))return;S.t=S.t.filter(x=>x.id!==b.dataset.id);S.sel=null}
  else if(a==="cmp"){const l=cur(t);if(needsPdf(ST[l.s])&&!l.pdf)return;l.c=now()}
  else if(a==="ver"){const v=document.getElementById("vb").value.trim();if(!v)return document.getElementById("vb").focus();
   const l=cur(t),d=now();l.v=v;l.vt=d;if(l.s+1<ST.length&&ST[l.s+1].m===ST[l.s].m)t.logs.push({s:l.s+1,a:d});else if(modDone(t,ST[l.s].m)&&modScore(t,ST[l.s].m)==null&&allow("score"))S.modal=ST[l.s].m}
@@ -493,7 +553,10 @@ document.addEventListener("click",e=>{
  else if(a==="prev"){S.vm=vmod(t)[0]-1}
  else if(a==="next"){const[v,m]=vmod(t);if(v<m)S.vm=v+1;else if(waiting(t)!=null&&ST[waiting(t)].m===v+1){const d=now();t.logs.push({s:waiting(t),a:d,st:d});S.vm=null}}
  else if(a==="score"){S.modal=+b.dataset.mi}
- else if(a==="addopen"){S.add=true}
+ else  if(a==="addopen"){S.add=true;S.addmsg="";S.addDraft={name:"",date:new Date().toISOString().slice(0,10),salary:"",wage:""};S.addBiz=S.view!=="overview"?S.view:(vbiz()[0]||"");S.addBranch=(addBranches(S.addBiz)[0]||{}).name||"";S.addDept=(addDepts()[0]||{}).name||"";S.addDesg=(addDesignations()[0]||{}).title||""}
+ else if(a==="orgopen")return openOrganization("business");
+ else if(a==="orgclose"){S.organization=false}
+ else if(a==="orgcreate")return createOrganizationRecord();
  else if(a==="uploadopen"){S.add=false;S.edit=false;S.modal=null;S.upload=true}
  else if(a==="uploadcancel"){cancelVideoUpload();return}
  else if(a==="parent-create-cancel"){document.getElementById("parent-create-panel").hidden=true;document.getElementById("parent-folder-status").textContent="";return}
@@ -508,7 +571,8 @@ document.addEventListener("click",e=>{
   t.scores=t.scores||{};t.scores[S.modal]={sc:Math.max(0,Math.min(MAXSC,n)),rm:document.getElementById("ms-rm").value.trim()};S.modal=null}
  else if(a==="theme")return toggleTheme();
  else if(a==="csv")return csv();
- save();render();
+ if(["add","del","cmp","ver","start","go","next","esave","msave"].includes(a))save();
+ render();
  if(a==="uploadopen")loadParentFolders();
  if(a==="videoopen")loadVideoFolders();
  if(a==="watchstep")loadVideoFolders(S.vpre);
@@ -516,6 +580,24 @@ document.addEventListener("click",e=>{
 
 document.addEventListener("change",e=>{
  if(e.target.id==="view"){S.bv=e.target.value;render();return}
+ if(e.target.id==="org-entity"){S.orgEntity=e.target.value;S.orgParent=(organizationParents(S.orgEntity)[0]||{}).id||"";S.orgMsg="";render();return}
+ if(e.target.id==="org-parent"){S.orgParent=e.target.value;return}
+ if(e.target.id==="bz"){
+  if(e.target.value==="__add_business__"&&canManageOrganization())return showAddCategory("business");
+  S.addBiz=e.target.value;S.addBranch=(addBranches()[0]||{}).name||"";S.addDept=(addDepts()[0]||{}).name||"";S.addDesg=(addDesignations()[0]||{}).title||"";S.addmsg="";render();return
+ }
+ if(e.target.id==="br"){
+  if(e.target.value==="__add_branch__"&&canManageOrganization())return showAddCategory("branch");
+  S.addBranch=e.target.value;S.addDept=(addDepts()[0]||{}).name||"";S.addDesg=(addDesignations()[0]||{}).title||"";S.addmsg="";render();return
+ }
+ if(e.target.id==="dp"){
+  if(e.target.value==="__add_department__"&&canManageOrganization())return showAddCategory("department");
+  S.addDept=e.target.value;S.addDesg=(addDesignations()[0]||{}).title||"";S.addmsg="";render();return
+ }
+ if(e.target.id==="ds"){
+  if(e.target.value==="__add_designation__"&&canManageOrganization())return showAddCategory("designation");
+  S.addDesg=e.target.value;
+ }
  const inp=e.target.closest&&e.target.closest("#pdf-file");
  if(inp)uploadPresentation(inp);
 });
@@ -801,11 +883,20 @@ function csv(){
 }
 document.addEventListener("keydown",e=>{
  if((e.key==="Enter"||e.key===" ")&&e.target.classList&&(e.target.classList.contains("bz")||e.target.classList.contains("hy-t"))){e.preventDefault();e.target.click();return}
- if(e.key==="Escape"&&(S.modal!=null||S.edit||S.add||S.upload||S.video||S.map||S.acc)){stopVideoPlayer();stopVideoPlayer("map-player");S.acc=false;S.accf=null;S.modal=null;S.edit=false;S.add=false;S.upload=false;S.video=false;S.map=false;S.mplay="";render()}
+ if(e.key==="Escape"&&(S.modal!=null||S.edit||S.add||S.upload||S.video||S.map||S.organization)){stopVideoPlayer();stopVideoPlayer("map-player");S.modal=null;S.edit=false;S.add=false;S.upload=false;S.video=false;S.map=false;S.organization=false;S.mplay="";render()}
+ else if(e.key==="Enter"&&S.add&&e.target.id.startsWith("add-category-name-")){const entity=e.target.id.slice("add-category-name-".length),b=document.querySelector(`[data-a="category-create"][data-entity="${entity}"]`);if(b)b.click()}
  else if(e.key==="Enter"&&S.add&&e.target.tagName==="INPUT"){const b=document.querySelector('[data-a="add"]');if(b)b.click()}
  else if(e.key==="Enter"&&e.target.id==="en-nm"){const b=document.querySelector('[data-a="esave"]');if(b)b.click()}
 });
-document.addEventListener("input",e=>{if(e.target.id==="q"){S.q=e.target.value;const l=document.getElementById("tl");if(l)l.innerHTML=listBody()}});
+document.addEventListener("input",e=>{
+ if(e.target.id==="org-name")S.orgName=e.target.value;
+ if(S.add&&S.addDraft){
+  const fields={nm:"name",jd:"date",sl:"salary",wg:"wage"};
+  const field=fields[e.target.id];
+  if(field)S.addDraft[field]=e.target.value;
+ }
+ if(e.target.id==="q"){S.q=e.target.value;const l=document.getElementById("tl");if(l)l.innerHTML=listBody()}
+});
 // ---- Map videos modal actions
 function mapRender(){
  const box=document.querySelector(".mb"),top=box?box.scrollTop:0,fid=document.activeElement&&document.activeElement.id;
@@ -841,7 +932,22 @@ async function mapAction(a,b){
  }catch(err){S.mmsg=err instanceof Error?err.message:String(err)}
  mapRender();
 }
-load().then(render);loadMap();loadHier().then(()=>{if(S.bv==="hierarchy"&&!S.sel)render()});
+async function restoreSession(){
+ try{
+  const response=await fetch("/api/session"),result=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(result.error||"Your session expired. Please sign in again.");
+  S.user=result.user;
+  await loadOptions();
+  await load();
+  initView();render();loadMap();loadHier();
+ }catch(error){
+  await fetch("/api/logout",{method:"POST"}).catch(()=>{});
+  S.user=null;S.t=[];S.loaded=false;
+  S.loginmsg=error instanceof Error&&error.message!=="Sign in to continue."?error.message:"";
+  renderLogin();
+ }
+}
+restoreSession();
 
 // ---- Light / dark theme toggle (button sits in the page header; choice is remembered in this browser)
 const curTheme=()=>document.documentElement.dataset.theme||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");
