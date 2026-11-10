@@ -53,6 +53,21 @@ const ROLE_LABELS = {
   trainee: "Trainee"
 };
 
+const PERM_LABELS = {
+  add: "Add trainee",
+  del: "Remove trainee",
+  ename: "Edit trainee name",
+  upload: "Upload video",
+  map: "Map videos",
+  hier: "Manage hierarchy images",
+  verify: "Verify training steps",
+  score: "Manage module scores",
+  csv: "Export CSV",
+  salary: "View salary and wage",
+  watch: "Watch videos",
+  work: "Complete trainee tasks"
+};
+
 // 1 = allowed, 0 = hidden in the interface. Database access is enforced by RLS.
 const ROLE_PERMS = {
   developer:     { add:1, del:1, ename:1, upload:1, map:1, hier:1, verify:1, score:1, csv:1, salary:1, watch:1, work:0 },

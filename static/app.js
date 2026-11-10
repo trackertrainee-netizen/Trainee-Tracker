@@ -121,6 +121,7 @@ function mapModal(){
  </div></div>`;
 }
 function modal(t){
+ if(S.permissions)return permissionsModal();
  if(S.organization)return organizationModal();
  if(S.map)return mapModal();
  if(S.upload)return uploadModal();
@@ -150,10 +151,28 @@ const mv=mi=>ST.filter(x=>x.m===mi&&x.t==="VIDEO").reduce((a,x)=>a+x.min,0);
 // ---- State
 const BIZ=BUSINESSES;
 const biz=t=>t.biz||"";
-let S={t:[],sel:null,upload:false,video:false,hls:null,view:"overview",bv:"overview",map:false,organization:false,orgEntity:"business",orgParent:"",orgName:"",orgMsg:"",vmap:{},folders:[],mb:"Magnus",mm:0,mt:null,mf:"",mplay:"",mmsg:"",mfstat:"",himg:{},hmsg:{},user:null,options:{businesses:[],branches:[],departments:[],designations:[]},addBiz:"",addBranch:"",addDept:"",addDesg:"",addmsg:"",loginmsg:""};
+let S={t:[],sel:null,upload:false,video:false,hls:null,view:"overview",bv:"overview",map:false,organization:false,permissions:false,permissionDraft:null,permissionMsg:"",orgEntity:"business",orgParent:"",orgName:"",orgMsg:"",vmap:{},folders:[],mb:"Magnus",mm:0,mt:null,mf:"",mplay:"",mmsg:"",mfstat:"",himg:{},hmsg:{},user:null,options:{businesses:[],branches:[],departments:[],designations:[]},addBiz:"",addBranch:"",addDept:"",addDesg:"",addmsg:"",loginmsg:""};
 let activeVideoUpload=null;
 // ---- Supabase Auth-backed roles
 const sameName=(a,b)=>String(a||"").trim().toLowerCase()===String(b||"").trim().toLowerCase();
+const PERMISSION_STORAGE_KEY="mt_permissions";
+const copyPermissions=permissions=>Object.fromEntries(Object.keys(permissions).map(role=>[role,{...permissions[role]}]));
+function loadPermissionOverrides(){
+ try{
+  const saved=localStorage.getItem(PERMISSION_STORAGE_KEY);
+  if(!saved)return;
+  const permissions=JSON.parse(saved);
+  if(!permissions||typeof permissions!=="object")throw new Error("Saved permissions are invalid.");
+  Object.keys(ROLE_PERMS).forEach(role=>{
+   if(role==="developer"||!permissions[role]||typeof permissions[role]!=="object")return;
+   Object.keys(PERM_LABELS).forEach(key=>{
+    const value=permissions[role][key];
+    if(value===0||value===1||value===false||value===true)ROLE_PERMS[role][key]=value===1||value===true?1:0;
+   });
+  });
+ }catch(error){console.warn("Could not load saved role permissions.",error)}
+}
+loadPermissionOverrides();
 const allow=p=>!!(S.user&&ROLE_PERMS[S.user.role]&&ROLE_PERMS[S.user.role][p]);
 const canAddTrainee=()=>!!(allow("add")&&S.user&&["developer","business"].includes(S.user.role));
 const ALLBIZ=u=>u.role==="developer";
@@ -172,7 +191,7 @@ const roleLabel=()=>S.user?(ROLE_LABELS[S.user.role]||S.user.role):"";
 const scopeLabel=()=>{const u=S.user;if(!u)return"";if(ALLBIZ(u))return"All businesses";
  if(u.business&&u.business.name)return [u.business.name,u.branch&&u.branch.name,u.department&&u.department.name].filter(Boolean).join(" · ");
  return""};
-const initView=()=>{S.sel=null;S.vm=null;S.q="";S.bv="overview";S.modal=null;S.edit=false;S.add=false;S.upload=false;S.video=false;S.map=false;S.organization=false;S.view=oneBiz()?vbiz()[0]:"overview"};
+const initView=()=>{S.sel=null;S.vm=null;S.q="";S.bv="overview";S.modal=null;S.edit=false;S.add=false;S.upload=false;S.video=false;S.map=false;S.organization=false;S.permissions=false;S.permissionDraft=null;S.view=oneBiz()?vbiz()[0]:"overview"};
 async function login(username,password){
  const response=await fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username,password})});
  const result=await response.json().catch(()=>({}));
@@ -263,7 +282,8 @@ function render(){
 function side(t){
  const brand=`<div class="bk"><div class="lg">M</div><div><div class="brand">Magnus</div><div class="mu">Trainee Tracker</div></div></div>`;
  const foot=`<div class="sf"><span class="mu">Theme</span>${tbtn()}</div>`;
- const who=`<div class="who"><div class="who-n">${esc(S.user.full_name||roleLabel())}</div><div class="mu">${esc(roleLabel())}${scopeLabel()?" · "+esc(scopeLabel()):""}</div><div class="who-b"><button type="button" class="sm" data-a="logout">Sign out</button></div></div>`;
+ const permissionButton=S.user.role==="developer"?'<button type="button" class="sm" data-a="permissions-open">Role permissions</button>':"";
+ const who=`<div class="who"><div class="who-n">${esc(S.user.full_name||roleLabel())}</div><div class="mu">${esc(roleLabel())}${scopeLabel()?" · "+esc(scopeLabel()):""}</div><div class="who-b">${permissionButton}<button type="button" class="sm" data-a="logout">Sign out</button></div></div>`;
  const B=(p,h)=>allow(p)?h:"";
  const orgButton=canManageOrganization()?'<button data-a="orgopen">Manage organization</button>':"";
  if(!t)return `<aside class="sb">${brand}${who}
@@ -343,6 +363,41 @@ async function createOrganizationRecord(){
   }catch(error){S.orgMsg+=` The record was created, but organization options could not refresh: ${error instanceof Error?error.message:String(error)}`}
  }catch(error){S.orgMsg=error instanceof Error?error.message:String(error)}
  render();
+}
+function permissionsModal(){
+ const draft=S.permissionDraft||ROLE_PERMS,roles=Object.keys(ROLE_PERMS);
+ const header=roles.map(role=>`<th>${esc(ROLE_LABELS[role]||role)}</th>`).join("");
+ const rows=Object.entries(PERM_LABELS).map(([permission,label])=>`<tr><td>${esc(label)}</td>${roles.map(role=>`<td style="text-align:center"><input type="checkbox" class="permission-toggle" data-role="${esc(role)}" data-permission="${esc(permission)}"${draft[role]&&draft[role][permission]?" checked":""}${role==="developer"?" disabled":""} aria-label="${esc(label+" — "+(ROLE_LABELS[role]||role))}"></td>`).join("")}</tr>`).join("");
+ return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="permissions-title"><div class="bd" data-a="permissions-close"></div><div class="mb wide acc"><h2 id="permissions-title">Role permissions</h2><div class="mu">Choose which actions are shown for each existing role. Developer permissions stay enabled.</div><div class="sc"><table><tr><th>Permission</th>${header}</tr>${rows}</table></div><div class="mu" role="status">${esc(S.permissionMsg||"")}</div><div class="mu" style="margin-top:8px">These switches control the app interface only; Supabase and API policies still enforce server-side access. Save applies on this browser. Download config.js and deploy it to share the settings with everyone.</div><div class="row" style="margin-top:14px;justify-content:flex-end"><button type="button" data-a="permissions-close">Close</button><button type="button" data-a="permissions-download">Download config.js</button><button type="button" class="p" data-a="permissions-save">Save permissions</button></div></div></div>`;
+}
+function savePermissions(){
+ if(!S.permissionDraft)return;
+ Object.keys(ROLE_PERMS).forEach(role=>{
+  if(role==="developer")return;
+  Object.keys(PERM_LABELS).forEach(permission=>{ROLE_PERMS[role][permission]=S.permissionDraft[role][permission]?1:0});
+ });
+ try{
+  localStorage.setItem(PERMISSION_STORAGE_KEY,JSON.stringify(ROLE_PERMS));
+  S.permissionMsg="Permissions saved in this browser.";
+ }catch(error){
+  S.permissionMsg=`Permissions are active for this session, but could not be saved in this browser: ${error instanceof Error?error.message:String(error)}`;
+ }
+ render();
+}
+function downloadPermissionConfig(){
+ const config=S.permissionDraft||ROLE_PERMS;
+ const contents=[
+  "// Role and permission configuration for Magnus Trainee Tracker.",
+  `const DEPTS = ${JSON.stringify(DEPTS,null,2)};`,
+  `const BRANCHES = ${JSON.stringify(BRANCHES,null,2)};`,
+  `const BUSINESSES = ${JSON.stringify(BUSINESSES,null,2)};`,
+  `const SUBVIEWS = ${JSON.stringify(SUBVIEWS,null,2)};`,
+  `const ROLE_LABELS = ${JSON.stringify(ROLE_LABELS,null,2)};`,
+  `const PERM_LABELS = ${JSON.stringify(PERM_LABELS,null,2)};`,
+  `const ROLE_PERMS = ${JSON.stringify(config,null,2)};`,
+ ].join("\n\n")+"\n";
+ const url=URL.createObjectURL(new Blob([contents],{type:"text/javascript"})),anchor=document.createElement("a");
+ anchor.href=url;anchor.download="config.js";anchor.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 const emptyMsg=()=>S.user&&S.user.role==="trainee"?"No trainee record is linked to this account. Please ask your administrator to check your login.":scoped().length?"No trainees match your search.":canAddTrainee()?"No trainees yet. Use “Add trainee” in the sidebar.":"No trainees to show yet.";
 function tcards(){
@@ -518,6 +573,7 @@ document.addEventListener("click",e=>{
  if(a==="logout")return logout();
  if(["cmp","go","start","next"].includes(a)&&!allow("work"))return;
  const NEED={addopen:"add",add:"add",del:"del",ename:"ename",esave:"ename",uploadopen:"upload",hyremove:"hier",ver:"verify",score:"score",msave:"score",csv:"csv"};
+ if(a.startsWith("permissions-")&&S.user.role!=="developer")return;
  if(a.startsWith("org")&&!canManageOrganization())return;
  if(a==="category-create")return createAddCategory(b.dataset.entity);
  if(a==="category-cancel"){
@@ -558,6 +614,10 @@ document.addEventListener("click",e=>{
  else if(a==="next"){const[v,m]=vmod(t);if(v<m)S.vm=v+1;else if(waiting(t)!=null&&ST[waiting(t)].m===v+1){const d=now();t.logs.push({s:waiting(t),a:d,st:d});S.vm=null}}
  else if(a==="score"){S.modal=+b.dataset.mi}
  else  if(a==="addopen"){S.add=true;S.addmsg="";S.addDraft={name:"",date:new Date().toISOString().slice(0,10),salary:"",wage:""};S.addBiz=S.view!=="overview"?S.view:(vbiz()[0]||"");S.addBranch=(addBranches(S.addBiz)[0]||{}).name||"";S.addDept=(addDepts()[0]||{}).name||"";S.addDesg=(addDesignations()[0]||{}).title||""}
+ else if(a==="permissions-open"){S.permissions=true;S.permissionDraft=copyPermissions(ROLE_PERMS);S.permissionMsg=""}
+ else if(a==="permissions-close"){S.permissions=false;S.permissionDraft=null;S.permissionMsg=""}
+ else if(a==="permissions-save")return savePermissions();
+ else if(a==="permissions-download")return downloadPermissionConfig();
  else if(a==="orgopen")return openOrganization("business");
  else if(a==="orgclose"){S.organization=false}
  else if(a==="orgcreate")return createOrganizationRecord();
@@ -583,6 +643,13 @@ document.addEventListener("click",e=>{
 });
 
 document.addEventListener("change",e=>{
+ if(e.target.classList&&e.target.classList.contains("permission-toggle")){
+  const role=e.target.dataset.role,permission=e.target.dataset.permission;
+  if(S.permissions&&role!=="developer"&&S.permissionDraft&&S.permissionDraft[role]&&Object.prototype.hasOwnProperty.call(PERM_LABELS,permission)){
+   S.permissionDraft[role][permission]=e.target.checked?1:0;
+  }
+  return;
+ }
  if(e.target.id==="view"){S.bv=e.target.value;render();return}
  if(e.target.id==="org-entity"){S.orgEntity=e.target.value;S.orgParent=(organizationParents(S.orgEntity)[0]||{}).id||"";S.orgMsg="";render();return}
  if(e.target.id==="org-parent"){S.orgParent=e.target.value;return}
@@ -887,7 +954,7 @@ function csv(){
 }
 document.addEventListener("keydown",e=>{
  if((e.key==="Enter"||e.key===" ")&&e.target.classList&&(e.target.classList.contains("bz")||e.target.classList.contains("hy-t"))){e.preventDefault();e.target.click();return}
- if(e.key==="Escape"&&(S.modal!=null||S.edit||S.add||S.upload||S.video||S.map||S.organization)){stopVideoPlayer();stopVideoPlayer("map-player");S.modal=null;S.edit=false;S.add=false;S.upload=false;S.video=false;S.map=false;S.organization=false;S.mplay="";render()}
+ if(e.key==="Escape"&&(S.modal!=null||S.edit||S.add||S.upload||S.video||S.map||S.organization||S.permissions)){stopVideoPlayer();stopVideoPlayer("map-player");S.modal=null;S.edit=false;S.add=false;S.upload=false;S.video=false;S.map=false;S.organization=false;S.permissions=false;S.permissionDraft=null;S.mplay="";render()}
  else if(e.key==="Enter"&&S.add&&e.target.id.startsWith("add-category-name-")){const entity=e.target.id.slice("add-category-name-".length),b=document.querySelector(`[data-a="category-create"][data-entity="${entity}"]`);if(b)b.click()}
  else if(e.key==="Enter"&&S.add&&e.target.tagName==="INPUT"){const b=document.querySelector('[data-a="add"]');if(b)b.click()}
  else if(e.key==="Enter"&&e.target.id==="en-nm"){const b=document.querySelector('[data-a="esave"]');if(b)b.click()}
