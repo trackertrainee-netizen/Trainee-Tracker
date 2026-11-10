@@ -3,6 +3,7 @@ import os
 import re
 import subprocess
 import tempfile
+import uuid
 
 import boto3
 from dotenv import load_dotenv
@@ -104,7 +105,7 @@ def create_parent_folder(folder_name):
 
 
 def presentation_key(trainee_id, step):
-    return f"{PRESENTATION_PREFIX}/{int(trainee_id)}/{int(step)}.pdf"
+    return f"{PRESENTATION_PREFIX}/{uuid.UUID(str(trainee_id))}/{int(step)}.pdf"
 
 
 def upload_presentation_pdf(trainee_id, step, data):
