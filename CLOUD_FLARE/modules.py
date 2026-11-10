@@ -13,6 +13,10 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 BUCKET_NAME = os.getenv("BUCKET_NAME")
 ACCOUNT_ID = os.getenv("ACCOUNT_ID")
 
+PRESENTATION_PREFIX = "presentations"
+MAX_PRESENTATION_BYTES = 25 * 1024 * 1024
+HIERARCHY_PREFIX = "hierarchy"
+
 
 def _get_s3_client():
     if not all((ACCESS_KEY, SECRET_KEY, BUCKET_NAME, ACCOUNT_ID)):
@@ -72,7 +76,7 @@ def get_parent_folders():
     for page in paginator.paginate(Bucket=BUCKET_NAME, Delimiter="/"):
         for prefix in page.get("CommonPrefixes", []):
             folder = prefix["Prefix"].rstrip("/")
-            if folder:
+            if folder and folder != PRESENTATION_PREFIX:
                 folders.add(folder)
     return sorted(folders)
 
@@ -98,6 +102,42 @@ def create_parent_folder(folder_name):
     )
 
 
+def presentation_key(trainee_id, step):
+    return f"{PRESENTATION_PREFIX}/{int(trainee_id)}/{int(step)}.pdf"
+
+
+def upload_presentation_pdf(trainee_id, step, data):
+    """Store a trainee's presentation PDF in the R2 bucket (replaces any earlier one)."""
+    _get_s3_client().put_object(
+        Bucket=BUCKET_NAME,
+        Key=presentation_key(trainee_id, step),
+        Body=data,
+        ContentType="application/pdf",
+    )
+
+
+def get_presentation_object(trainee_id, step):
+    return _get_s3_client().get_object(Bucket=BUCKET_NAME, Key=presentation_key(trainee_id, step))
+
+
+def upload_hierarchy_image(slug, data, content_type):
+    """Store a business hierarchy image in the R2 bucket (replaces any earlier one)."""
+    _get_s3_client().put_object(
+        Bucket=BUCKET_NAME,
+        Key=f"{HIERARCHY_PREFIX}/{slug}",
+        Body=data,
+        ContentType=content_type,
+    )
+
+
+def get_hierarchy_object(slug):
+    return _get_s3_client().get_object(Bucket=BUCKET_NAME, Key=f"{HIERARCHY_PREFIX}/{slug}")
+
+
+def delete_hierarchy_object(slug):
+    _get_s3_client().delete_object(Bucket=BUCKET_NAME, Key=f"{HIERARCHY_PREFIX}/{slug}")
+
+
 def get_video_object(object_key):
     """Get one HLS playlist or segment from the configured bucket."""
     return _get_s3_client().get_object(Bucket=BUCKET_NAME, Key=object_key)
@@ -115,16 +155,15 @@ def _rclone_env():
         "RCLONE_CONFIG_R2_SECRET_ACCESS_KEY": SECRET_KEY,
         "RCLONE_CONFIG_R2_ENDPOINT": f"https://{ACCOUNT_ID}.r2.cloudflarestorage.com",
         "RCLONE_CONFIG_R2_REGION": "auto",
-        "RCLONE_CONFIG_R2_NO_CHECK_BUCKET": "true",
     })
     return env
 
 
-def upload_file_to_s3(file_path, s3_key, env=None):
+def upload_file_to_s3(file_path, s3_key):
     """Upload a file to the configured Cloudflare R2 bucket with rclone."""
     subprocess.run(
         ["rclone", "copyto", os.fspath(file_path), f"r2:{BUCKET_NAME}/{s3_key}"],
-        env=env or _rclone_env(),
+        env=_rclone_env(),
         check=True,
     )
 
@@ -190,6 +229,31 @@ def _run_ffmpeg_hls(cmd, duration, on_percent):
     on_percent(100)
 
 
+def _run_rclone_copy(source_dir, destination, env, on_percent):
+    """Run rclone copy and report 0-100 from its JSON stats log."""
+    proc = subprocess.Popen(
+        ["rclone", "copy", source_dir, destination,
+         "--use-json-log", "-v", "--stats", "500ms"],
+        env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
+    )
+    last = -1
+    for line in proc.stderr:
+        try:
+            stats = json.loads(line).get("stats")
+        except ValueError:
+            continue
+        if not stats or not stats.get("totalBytes"):
+            continue
+        percent = min(99, int(stats.get("bytes", 0) / stats["totalBytes"] * 100))
+        if percent != last:
+            last = percent
+            on_percent(percent)
+    code = proc.wait()
+    if code != 0:
+        raise subprocess.CalledProcessError(code, "rclone")
+    on_percent(100)
+
+
 def upload_video_as_hls(file_path, folder_name, progress=None):
     """Transcode a video to HLS and upload its playlist and segments to a custom folder.
 
@@ -227,17 +291,9 @@ def upload_video_as_hls(file_path, folder_name, progress=None):
             lambda percent: report("converting", percent),
         )
         report("uploading", 0)
-        segment_paths = sorted(
-            os.path.join(hls_dir, name)
-            for name in os.listdir(hls_dir)
-            if name.startswith("segment_") and name.endswith(".ts")
+        _run_rclone_copy(
+            hls_dir,
+            f"r2:{BUCKET_NAME}/{folder_name}",
+            env,
+            lambda percent: report("uploading", percent),
         )
-        upload_paths = segment_paths + [playlist_path]
-        total_bytes = sum(os.path.getsize(path) for path in upload_paths)
-        uploaded_bytes = 0
-        for path in upload_paths:
-            file_size = os.path.getsize(path)
-            upload_file_to_s3(path, f"{folder_name}/{os.path.basename(path)}", env)
-            os.remove(path)
-            uploaded_bytes += file_size
-            report("uploading", int(uploaded_bytes / total_bytes * 100))

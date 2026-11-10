@@ -14,23 +14,30 @@ import time
 import uuid
 
 from botocore.exceptions import BotoCoreError, ClientError
-from flask import Flask, Response, jsonify, request, send_from_directory
+from flask import Flask, Response, jsonify, request
 
 from CLOUD_FLARE.modules import (
+    MAX_PRESENTATION_BYTES,
     create_parent_folder,
+    delete_hierarchy_object,
+    get_hierarchy_object,
     get_parent_folders,
+    get_presentation_object,
     get_video_folders,
     get_video_object,
+    upload_hierarchy_image,
+    upload_presentation_pdf,
     upload_video_as_hls,
 )
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE, "data.json")
 VIDEO_MAP_FILE = os.path.join(BASE, "video_map.json")
-HIER_FILE = os.path.join(BASE, "hierarchy.json")
-HIER_DIR = os.path.join(BASE, "hierarchy_images")
-HIER_MAX_BYTES = 10 * 1024 * 1024
-UPLOAD_CHUNK_SIZE = 50 * 1024 * 1024
+HIERARCHY_FILE = os.path.join(BASE, "hierarchy_images.json")
+# Keep in sync with BUSINESSES in static/config.js
+BUSINESSES = ["Magnus", "Alims", "M&D", "Merchx"]
+MAX_HIERARCHY_BYTES = 10 * 1024 * 1024
+UPLOAD_CHUNK_SIZE = 200 * 1024 * 1024
 UPLOAD_CHUNK_DIR = os.path.join(tempfile.gettempdir(), "trainee_tracker_upload_chunks")
 lock = threading.Lock()
 video_jobs = {}
@@ -54,6 +61,55 @@ def write_data(data):
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     os.replace(tmp, DATA_FILE)
+
+
+def read_video_map():
+    try:
+        with open(VIDEO_MAP_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def write_video_map(data):
+    fd, tmp = tempfile.mkstemp(dir=BASE, suffix=".tmp")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, VIDEO_MAP_FILE)
+
+
+def read_hierarchy():
+    try:
+        with open(HIERARCHY_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def write_hierarchy(data):
+    fd, tmp = tempfile.mkstemp(dir=BASE, suffix=".tmp")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, HIERARCHY_FILE)
+
+
+def _business_slug(business):
+    return "".join(ch.lower() if ch.isalnum() else "-" for ch in business)
+
+
+def _image_type(data):
+    """Detect the image type from its first bytes (SVG is refused on purpose)."""
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
 
 
 def _upload_session_path(upload_id):
@@ -91,16 +147,6 @@ def _prune_video_jobs():
             if job["status"] in ("done", "error") and job["updated"] < cutoff
         ]:
             del video_jobs[job_id]
-
-
-def _start_video_job(job_id, upload_dir, video_path, folder_name):
-    """Keep the worker alive through graceful shutdown so temp cleanup can finish."""
-    thread = threading.Thread(
-        target=_run_video_job,
-        args=(job_id, upload_dir, video_path, folder_name),
-        daemon=False,
-    )
-    thread.start()
 
 
 def _run_video_job(job_id, upload_dir, video_path, folder_name):
@@ -156,6 +202,211 @@ def put_trainees():
     with lock:
         write_data(data)
     return jsonify(ok=True, count=len(data))
+
+
+@app.get("/api/video-map")
+def get_video_map():
+    with lock:
+        return jsonify(read_video_map())
+
+
+@app.put("/api/video-map")
+def put_video_map():
+    """Map one task to a video folder, or remove the mapping when folder is null/empty.
+
+    Body: {"business": "Magnus", "key": "0|Marketing introduction", "folder": "HRMS _ MARKETING/INTRO"}
+    """
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify(error="Invalid mapping details."), 400
+    business = body.get("business")
+    key = body.get("key")
+    folder = body.get("folder")
+    if not isinstance(business, str) or not business.strip():
+        return jsonify(error="Choose a business."), 400
+    if not isinstance(key, str) or not key.strip():
+        return jsonify(error="Choose a task."), 400
+    if folder is not None and not isinstance(folder, str):
+        return jsonify(error="Invalid video folder."), 400
+    if folder and (".." in folder.split("/") or folder.startswith("/") or "\\" in folder):
+        return jsonify(error="Invalid video folder."), 400
+    with lock:
+        data = read_video_map()
+        mapped = data.setdefault(business, {})
+        if folder:
+            mapped[key] = folder
+        else:
+            mapped.pop(key, None)
+            if not mapped:
+                data.pop(business, None)
+        write_video_map(data)
+        return jsonify(data)
+
+
+@app.get("/api/hierarchy-images")
+def list_hierarchy_images():
+    with lock:
+        return jsonify(read_hierarchy())
+
+
+@app.post("/api/hierarchy-images")
+def upload_hierarchy():
+    """Upload (or replace) the hierarchy image of one business. Images only."""
+    business = request.form.get("business", "")
+    upload = request.files.get("file")
+    if business not in BUSINESSES:
+        return jsonify(error="Choose a valid business."), 400
+    if upload is None or not upload.filename:
+        return jsonify(error="Select an image to upload."), 400
+    if request.content_length and request.content_length > MAX_HIERARCHY_BYTES + 1024 * 1024:
+        return jsonify(error="Image must be 10 MB or smaller."), 413
+    data = upload.read(MAX_HIERARCHY_BYTES + 1)
+    if len(data) > MAX_HIERARCHY_BYTES:
+        return jsonify(error="Image must be 10 MB or smaller."), 413
+    content_type = _image_type(data)
+    if not content_type:
+        return jsonify(error="Only PNG, JPG, GIF or WEBP images are allowed."), 400
+    try:
+        upload_hierarchy_image(_business_slug(business), data, content_type)
+    except RuntimeError as exc:
+        app.logger.error("Hierarchy storage configuration error: %s", exc)
+        return jsonify(error=str(exc)), 503
+    except (BotoCoreError, ClientError):
+        app.logger.exception("Could not store hierarchy image")
+        return jsonify(error="Could not save the image to storage."), 502
+    entry = {
+        "name": os.path.basename(upload.filename)[:120],
+        "size": len(data),
+        "type": content_type,
+        "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    with lock:
+        meta = read_hierarchy()
+        meta[business] = entry
+        write_hierarchy(meta)
+        return jsonify(meta)
+
+
+@app.get("/api/hierarchy-images/<business>")
+def view_hierarchy_image(business):
+    if business not in BUSINESSES:
+        return jsonify(error="Unknown business."), 404
+    try:
+        obj = get_hierarchy_object(_business_slug(business))
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") in ("NoSuchKey", "404", "NotFound"):
+            return jsonify(error="Image not found."), 404
+        app.logger.exception("Could not read hierarchy image")
+        return jsonify(error="Could not load the image from storage."), 502
+    except (BotoCoreError, RuntimeError):
+        app.logger.exception("Could not read hierarchy image")
+        return jsonify(error="Could not load the image from storage."), 502
+    body = obj["Body"]
+
+    def stream():
+        try:
+            while True:
+                chunk = body.read(64 * 1024)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            body.close()
+
+    headers = {"Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff"}
+    if "ContentLength" in obj:
+        headers["Content-Length"] = str(obj["ContentLength"])
+    return Response(stream(), mimetype=obj.get("ContentType") or "application/octet-stream", headers=headers)
+
+
+@app.delete("/api/hierarchy-images/<business>")
+def delete_hierarchy_image(business):
+    if business not in BUSINESSES:
+        return jsonify(error="Unknown business."), 404
+    try:
+        delete_hierarchy_object(_business_slug(business))
+    except RuntimeError as exc:
+        return jsonify(error=str(exc)), 503
+    except (BotoCoreError, ClientError):
+        app.logger.exception("Could not delete hierarchy image")
+        return jsonify(error="Could not remove the image from storage."), 502
+    with lock:
+        meta = read_hierarchy()
+        meta.pop(business, None)
+        write_hierarchy(meta)
+        return jsonify(meta)
+
+
+@app.post("/api/presentations")
+def upload_presentation():
+    """Trainee presentation upload. PDF only, checked on the server too."""
+    upload = request.files.get("file")
+    try:
+        trainee_id = int(request.form.get("trainee_id", ""))
+        step = int(request.form.get("step", ""))
+    except ValueError:
+        return jsonify(error="Invalid trainee or step."), 400
+    if upload is None or not upload.filename:
+        return jsonify(error="Select a PDF file to upload."), 400
+    if not upload.filename.lower().endswith(".pdf"):
+        return jsonify(error="Only PDF files are allowed."), 400
+    if request.content_length and request.content_length > MAX_PRESENTATION_BYTES + 1024 * 1024:
+        return jsonify(error="PDF must be 25 MB or smaller."), 413
+
+    data = upload.read(MAX_PRESENTATION_BYTES + 1)
+    if len(data) > MAX_PRESENTATION_BYTES:
+        return jsonify(error="PDF must be 25 MB or smaller."), 413
+    if not data.startswith(b"%PDF-"):
+        return jsonify(error="That file is not a valid PDF."), 400
+
+    with lock:
+        if not any(t.get("id") == trainee_id for t in read_data()):
+            return jsonify(error="Trainee not found."), 404
+
+    try:
+        upload_presentation_pdf(trainee_id, step, data)
+    except RuntimeError as exc:
+        app.logger.error("Presentation storage configuration error: %s", exc)
+        return jsonify(error=str(exc)), 503
+    except (BotoCoreError, ClientError):
+        app.logger.exception("Could not store presentation")
+        return jsonify(error="Could not save the PDF to storage."), 502
+    return jsonify(ok=True, size=len(data))
+
+
+@app.get("/api/presentations/<int:trainee_id>/<int:step>")
+def view_presentation(trainee_id, step):
+    try:
+        obj = get_presentation_object(trainee_id, step)
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") in ("NoSuchKey", "404", "NotFound"):
+            return jsonify(error="Presentation not found."), 404
+        app.logger.exception("Could not read presentation")
+        return jsonify(error="Could not load the PDF from storage."), 502
+    except (BotoCoreError, RuntimeError):
+        app.logger.exception("Could not read presentation")
+        return jsonify(error="Could not load the PDF from storage."), 502
+
+    body = obj["Body"]
+
+    def stream():
+        try:
+            while True:
+                chunk = body.read(64 * 1024)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            body.close()
+
+    headers = {
+        "Content-Disposition": 'inline; filename="presentation.pdf"',
+        "Cache-Control": "private, no-cache",
+        "X-Content-Type-Options": "nosniff",
+    }
+    if "ContentLength" in obj:
+        headers["Content-Length"] = str(obj["ContentLength"])
+    return Response(stream(), mimetype="application/pdf", headers=headers)
 
 
 @app.get("/api/videos")
@@ -318,7 +569,7 @@ def start_video_upload():
 @app.post("/api/video-uploads/<upload_id>/<int:chunk_index>")
 def upload_video_chunk(upload_id, chunk_index):
     if request.content_length and request.content_length > UPLOAD_CHUNK_SIZE + 1024 * 1024:
-        return jsonify(error="Upload chunk exceeds the 50 MB limit."), 413
+        return jsonify(error="Upload chunk exceeds the 200 MB limit."), 413
 
     session_dir, metadata = _read_upload_session(upload_id)
     if session_dir is None:
@@ -364,7 +615,6 @@ def complete_video_upload(upload_id):
         return jsonify(error="Video upload session is invalid."), 400
 
     folder_name = f"{metadata['parent_folder']}/{metadata['video_folder']}"
-    upload_dir = None
     try:
         for chunk_index in range(metadata["total_chunks"]):
             chunk_path = os.path.join(session_dir, f"chunk_{chunk_index:06d}")
@@ -379,28 +629,16 @@ def complete_video_upload(upload_id):
         if folder_name in get_video_folders():
             return jsonify(error="A video folder with that name already exists under this parent."), 409
 
-        upload_dir = tempfile.mkdtemp(prefix="trainee_tracker_upload_")
-        video_path = os.path.join(upload_dir, "input_video")
-        with open(video_path, "wb") as assembled:
-            for chunk_index in range(metadata["total_chunks"]):
-                chunk_path = os.path.join(session_dir, f"chunk_{chunk_index:06d}")
-                with open(chunk_path, "rb") as part:
-                    shutil.copyfileobj(part, assembled, length=1024 * 1024)
-        if os.path.getsize(video_path) != metadata["file_size"]:
-            return jsonify(error="Uploaded video size does not match the selected file."), 400
-
-        _prune_video_jobs()
-        job_id = str(uuid.uuid4())
-        with video_jobs_lock:
-            video_jobs[job_id] = {
-                "status": "converting",
-                "percent": 0,
-                "playlist": None,
-                "error": None,
-                "updated": time.time(),
-            }
-        _start_video_job(job_id, upload_dir, video_path, folder_name)
-        upload_dir = None
+        with tempfile.TemporaryDirectory(prefix="trainee_tracker_upload_") as upload_dir:
+            video_path = os.path.join(upload_dir, "input_video")
+            with open(video_path, "wb") as assembled:
+                for chunk_index in range(metadata["total_chunks"]):
+                    chunk_path = os.path.join(session_dir, f"chunk_{chunk_index:06d}")
+                    with open(chunk_path, "rb") as part:
+                        shutil.copyfileobj(part, assembled, length=1024 * 1024)
+            if os.path.getsize(video_path) != metadata["file_size"]:
+                return jsonify(error="Uploaded video size does not match the selected file."), 400
+            upload_video_as_hls(video_path, folder_name)
     except ValueError as exc:
         return jsonify(error=str(exc)), 400
     except RuntimeError as exc:
@@ -416,12 +654,8 @@ def complete_video_upload(upload_id):
         app.logger.exception("Video conversion or upload failed")
         return jsonify(error="Video conversion or upload failed. Check the server logs."), 502
 
-    finally:
-        if upload_dir:
-            shutil.rmtree(upload_dir, ignore_errors=True)
-
-    shutil.rmtree(session_dir, ignore_errors=True)
-    return jsonify(job_id=job_id), 202
+    shutil.rmtree(session_dir)
+    return jsonify(ok=True, folder=folder_name, playlist=f"{folder_name}/index.m3u8")
 
 
 @app.delete("/api/video-uploads/<upload_id>")
@@ -480,7 +714,11 @@ def upload_video():
                 "error": None,
                 "updated": time.time(),
             }
-        _start_video_job(job_id, upload_dir, video_path, folder_name)
+        threading.Thread(
+            target=_run_video_job,
+            args=(job_id, upload_dir, video_path, folder_name),
+            daemon=True,
+        ).start()
         upload_dir = None  # the worker thread now owns and removes it
     except ValueError as exc:
         return jsonify(error=str(exc)), 400
@@ -510,154 +748,6 @@ def video_job_status(job_id):
         playlist=job["playlist"],
         error=job["error"],
     )
-
-
-def read_video_map():
-    try:
-        with open(VIDEO_MAP_FILE, encoding="utf-8") as f:
-            data = json.load(f)
-        return data if isinstance(data, dict) else {}
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
-
-
-def write_video_map(data):
-    fd, tmp = tempfile.mkstemp(dir=BASE, suffix=".tmp")
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, VIDEO_MAP_FILE)
-
-
-def _valid_video_map(data):
-    """{business: {task key: "parent/video-folder"}} with safe folder paths."""
-    if not isinstance(data, dict):
-        return False
-    for business, tasks in data.items():
-        if not isinstance(business, str) or not isinstance(tasks, dict):
-            return False
-        for key, folder in tasks.items():
-            if not isinstance(key, str) or not isinstance(folder, str) or not folder:
-                return False
-            if any(part in ("", ".", "..") for part in folder.split("/")) or "\\" in folder:
-                return False
-    return True
-
-
-@app.get("/api/video-map")
-def get_video_map():
-    with lock:
-        return jsonify(read_video_map())
-
-
-@app.put("/api/video-map")
-def put_video_map():
-    data = request.get_json(silent=True)
-    if not _valid_video_map(data):
-        return jsonify(error="Invalid video mapping."), 400
-    with lock:
-        write_video_map(data)
-    return jsonify(ok=True)
-
-
-def _image_ext(head):
-    """Detect the real image type from the file header (PNG, JPEG, GIF, WEBP only)."""
-    if head.startswith(b"\x89PNG\r\n\x1a\n"):
-        return ".png"
-    if head[:3] == b"\xff\xd8\xff":
-        return ".jpg"
-    if head[:6] in (b"GIF87a", b"GIF89a"):
-        return ".gif"
-    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
-        return ".webp"
-    return None
-
-
-def _valid_business(name):
-    return (
-        isinstance(name, str)
-        and 0 < len(name) <= 40
-        and name == name.strip()
-        and all(ch.isprintable() for ch in name)
-    )
-
-
-def read_hier():
-    try:
-        with open(HIER_FILE, encoding="utf-8") as f:
-            data = json.load(f)
-        return data if isinstance(data, dict) else {}
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
-
-
-def write_hier(data):
-    fd, tmp = tempfile.mkstemp(dir=BASE, suffix=".tmp")
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, HIER_FILE)
-
-
-@app.get("/api/hierarchy")
-def list_hierarchy():
-    with lock:
-        return jsonify({biz: {"v": entry.get("v", 0)} for biz, entry in read_hier().items()})
-
-
-@app.post("/api/hierarchy/<business>")
-def upload_hierarchy(business):
-    if not _valid_business(business):
-        return jsonify(error="Invalid business name."), 400
-    if request.content_length and request.content_length > HIER_MAX_BYTES + 1024 * 1024:
-        return jsonify(error="The image is larger than 10 MB."), 413
-    image = request.files.get("image")
-    if image is None or not image.filename:
-        return jsonify(error="Select an image to upload."), 400
-    data = image.read(HIER_MAX_BYTES + 1)
-    if len(data) > HIER_MAX_BYTES:
-        return jsonify(error="The image is larger than 10 MB."), 413
-    ext = _image_ext(data[:16])
-    if ext is None:
-        return jsonify(error="Upload a PNG, JPG, WEBP or GIF image."), 400
-
-    os.makedirs(HIER_DIR, exist_ok=True)
-    filename = uuid.uuid4().hex + ext
-    with open(os.path.join(HIER_DIR, filename), "wb") as f:
-        f.write(data)
-    with lock:
-        hier = read_hier()
-        old = hier.get(business, {}).get("file")
-        hier[business] = {"file": filename, "v": int(time.time())}
-        write_hier(hier)
-    if old and old != filename:
-        try:
-            os.remove(os.path.join(HIER_DIR, os.path.basename(old)))
-        except OSError:
-            pass
-    return jsonify(entry={"v": hier[business]["v"]}), 201
-
-
-@app.delete("/api/hierarchy/<business>")
-def delete_hierarchy(business):
-    with lock:
-        hier = read_hier()
-        entry = hier.pop(business, None)
-        if entry:
-            write_hier(hier)
-    if entry and entry.get("file"):
-        try:
-            os.remove(os.path.join(HIER_DIR, os.path.basename(entry["file"])))
-        except OSError:
-            pass
-    return jsonify(ok=True)
-
-
-@app.get("/api/hierarchy/image/<business>")
-def hierarchy_image(business):
-    with lock:
-        entry = read_hier().get(business)
-    if not entry or not entry.get("file"):
-        return jsonify(error="No hierarchy image for this business."), 404
-    return send_from_directory(HIER_DIR, os.path.basename(entry["file"]), max_age=3600)
 
 
 if __name__ == "__main__":

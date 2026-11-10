@@ -237,32 +237,58 @@ tr.lkd td{color:var(--lk)}
 .chip.wa{animation:pulse 2.6s ease-in-out infinite}
 html.tx *,html.tx *::before,html.tx *::after{transition:background-color .4s,color .4s,border-color .4s,box-shadow .4s!important}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+/* Presentation (PDF) upload on a started task */
+.pdf-box{display:flex;align-items:center;gap:0.875rem;flex-wrap:wrap;margin:0 0 0.625rem;padding:0.75rem 0.875rem;border:1px dashed var(--bd);border-radius:0.875rem;background:color-mix(in srgb,var(--ok) 5%,transparent)}
+.pdf-box:not(.pdf-empty){border-style:solid}
+.pdf-meta{flex:1;min-width:10rem}
+.pdf-ico{display:inline-grid;place-items:center;width:2.5rem;height:2.5rem;border-radius:0.625rem;background:var(--ok);color:#fff;font-size:0.6875rem;font-weight:700;letter-spacing:.04em}
+.pdf-link{font-weight:600;color:var(--ok);word-break:break-all}
+.pdf-replace{cursor:pointer;padding:0.375rem 0.875rem;border:1px solid var(--bd);border-radius:6.1875rem;font-size:0.8125rem;font-weight:600}
+.pdf-replace:hover{border-color:var(--ok)}
+#pdf-status{min-height:1.2em;margin-bottom:0.625rem}
+.cur .pdf-link{color:inherit}
+.cur .pdf-box,.cur .pdf-replace{border-color:rgba(255,255,255,.3)}
+.cur .pdf-replace:hover{border-color:#fff}
+.cur .pdf-box input[type=file]{max-width:100%;color:inherit}
 
-/* ---- Slicers (business + view) */
-.slc{display:flex;flex-wrap:wrap;gap:0.75rem 1.5rem;margin-bottom:1rem}
-.sl{display:flex;flex-direction:column;gap:0.3125rem}
-.pl{display:flex;flex-wrap:wrap;gap:0.4375rem}
-button.pill{padding:0.3125rem 0.875rem;font-size:0.8125rem;font-weight:600;border-radius:6.1875rem;cursor:pointer}
-button.pill .pc{opacity:.65;font-weight:500;margin-left:0.125rem}
-button.pill.on{background:var(--gold);color:var(--on-gold);border-color:var(--gold)}
-/* ---- Hierarchy view */
-.hr{display:flex;flex-direction:column;gap:1.25rem}
-.hbiz>.sp{margin-bottom:0.625rem}.hbiz h2{margin:0}
-.hbiz .hb{margin-left:0.875rem}
-.hd{margin-top:0.625rem}.hdt{font-weight:600;margin-bottom:0.25rem}
-.hrow{display:grid;grid-template-columns:minmax(8rem,1.4fr) minmax(6rem,1fr) auto auto;gap:0.75rem;align-items:center;padding:0.5rem 0.75rem;border-top:1px solid var(--bd);cursor:pointer;border-radius:0.5rem}
-.hrow:hover{background:var(--hi)}
-@media (max-width:640px){.hrow{grid-template-columns:1fr auto}}
-/* ---- Map videos / select fields */
-.fl select{width:100%;font-weight:500;color:var(--tx)}
-.video-player-status.vhide:not(.err){display:none}
-.sl select{min-width:11rem}
-.himg{display:block;max-width:100%;height:auto;margin-top:0.75rem;border-radius:0.75rem;border:1px solid var(--bd)}
-.hcard .row{align-items:center}
-label.upl{display:inline-block;padding:0.25rem 0.75rem;font-size:0.75rem;font-weight:600;border-radius:6.1875rem;border:1px solid var(--bd2);background:var(--card);color:var(--tx);cursor:pointer}
-label.upl:hover{border-color:var(--gold)}
-/* ---- Business cards on the home page */
-.bg{display:grid;grid-template-columns:repeat(auto-fit,minmax(13rem,1fr));gap:0.875rem;margin-bottom:1rem}
-.bg .card{margin:0}
-.bz .bn{font:500 2.25rem/1.1 var(--serif);margin-top:0.5rem}
-.bz .bm{display:flex;flex-wrap:wrap;gap:0.125rem 0.75rem;margin-top:0.625rem;font-size:0.75rem;color:var(--mu)}
+/* Businesses overview */
+.vw{margin:0 0 1rem;max-width:16rem}
+.vw select{width:100%;font-weight:500;color:var(--tx)}
+.bh{margin:1.5rem 0 0.75rem}
+.bg{display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:1rem}
+.bz{margin-bottom:0;padding:1.25rem 1.5rem}
+.bz .sp b{font-size:1.25rem}
+.bn{font-family:var(--serif);font-weight:500;font-size:2.5rem;line-height:1.1;margin-top:0.75rem}
+.bs{display:flex;flex-wrap:wrap;gap:0.25rem 0.875rem;margin-top:0.75rem}
+@media (min-width:1024px){.bg{grid-template-columns:repeat(4,1fr)}}
+
+/* Business inner view + hierarchy */
+.bk-btn{margin:0 0 0.875rem;padding:0.4375rem 1rem;border-radius:6.1875rem;font-size:0.875rem;background:transparent}
+.hy{margin-bottom:1rem;padding:1.25rem 1.5rem}
+.hy-h{display:flex;align-items:baseline;gap:0.625rem}
+.hy-top{margin-bottom:0.75rem}.hy-top h2{margin:0}
+.hy-br{margin:0.875rem 0 0;padding-left:1rem;border-left:2px solid var(--bd)}
+.hy-br>.hy-h b{font-family:var(--serif);font-size:1.125rem}
+.hy-d{margin:0.625rem 0 0 0.5rem;padding-left:1rem;border-left:2px solid var(--bd)}
+.hy-ts{display:flex;flex-direction:column;gap:0.5rem;margin-top:0.5rem}
+.hy-t{display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;padding:0.625rem 0.875rem;border:1px solid var(--bd);border-radius:0.75rem;background:var(--card)}
+.hy-t .mu{flex:1;min-width:6rem}
+.hy-t:hover{transform:none}
+
+/* View dropdown: value and list follow the theme colours (no default black) */
+.vw select option{background:#F8F6EC;color:#0f2a1c}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .vw select option{background:#0f2e1f;color:#EEEBDA}}
+:root[data-theme="dark"] .vw select option{background:#0f2e1f;color:#EEEBDA}
+
+/* ---- Map videos */
+.pills{display:flex;flex-wrap:wrap;gap:0.5rem}
+.pill{border-radius:62.4375rem;padding:0.5rem 1.125rem;font-weight:600}
+.pill.on{background:linear-gradient(180deg,var(--gold2),var(--gold));color:var(--on-gold);border-color:transparent}
+.mb select{width:100%;font-weight:500}
+.map-act{display:flex;flex-direction:column;align-items:flex-start;gap:0.375rem}
+td button.sm{white-space:nowrap}
+/* ---- Hierarchy images */
+.hyi .sp{align-items:center;margin-bottom:0.625rem}
+.hy-up{cursor:pointer;padding:0.375rem 0.875rem;border:1px solid var(--bd2);border-radius:6.1875rem;font-size:0.8125rem;font-weight:600;background:var(--card)}
+.hy-up:hover{border-color:var(--gold)}.hy-up.is-busy{opacity:.4;pointer-events:none}
+.hy-img{display:block;max-width:100%;max-height:70vh;margin:0.5rem 0 0.75rem;border-radius:0.75rem;border:1px solid var(--bd)}
