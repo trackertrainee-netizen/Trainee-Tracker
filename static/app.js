@@ -314,7 +314,7 @@ function render(){
 function topbar(){
  const showSearch=!(S.nav==="dashboard"&&!S.sel&&S.view==="overview");
  const name=S.user.full_name||roleLabel(),initial=String(name).trim().slice(0,1).toUpperCase();
- return `<header class="topbar">${showSearch?`<label class="top-search"><span aria-hidden="true">⌕</span><input id="q" type="search" value="${esc(S.q||"")}" placeholder="Search trainees, departments, designations…" aria-label="Search trainees" autocomplete="off"></label>`:""}<div class="top-actions"><button type="button" class="bell" aria-label="Notifications" title="Notifications"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 8 3 8H3s3-1 3-8"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg></button><details class="profile-menu"><summary class="top-profile"><span class="avatar">${esc(initial||"U")}</span><div><b>${esc(name)}</b><span>${esc(roleLabel())}</span></div><span class="profile-caret" aria-hidden="true">⌄</span></summary><div class="profile-dropdown">${canAddTrainee()?'<button type="button" data-a="addopen"><span>Add trainee</span></button>':""}${allow("csv")?'<button type="button" data-a="csv"><span>Export CSV</span></button>':""}<button type="button" data-a="theme"><span>Toggle theme</span></button><button type="button" data-a="logout"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17l5-5-5-5M15 12H3"/><path d="M12 3h7a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-7"/></svg><span>Logout</span></button></div></details></div></header>`;
+ return `<header class="topbar">${showSearch?`<label class="top-search"><span aria-hidden="true">⌕</span><input id="q" type="search" value="${esc(S.q||"")}" placeholder="Search trainees, departments, designations…" aria-label="Search trainees" autocomplete="off"></label>`:""}<div class="top-actions"><button type="button" class="bell" aria-label="Notifications" title="Notifications"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 8 3 8H3s3-1 3-8"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg></button><details class="profile-menu"><summary class="top-profile"><span class="avatar">${esc(initial||"U")}</span><div><b>${esc(name)}</b><span>${esc(roleLabel())}</span></div><span class="profile-caret" aria-hidden="true">⌄</span></summary><div class="profile-dropdown">${allow("csv")?'<button type="button" data-a="csv"><span>Export CSV</span></button>':""}<button type="button" data-a="theme"><span>Toggle theme</span></button><button type="button" data-a="logout"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17l5-5-5-5M15 12H3"/><path d="M12 3h7a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-7"/></svg><span>Logout</span></button></div></details></div></header>`;
 }
 function side(t){
  const brand=`<div class="bk"><div class="lg">M</div><div><div class="brand">Magnus</div><div class="mu">Trainee Tracker</div></div></div>`;
@@ -431,7 +431,7 @@ function downloadPermissionConfig(){
  const url=URL.createObjectURL(new Blob([contents],{type:"text/javascript"})),anchor=document.createElement("a");
  anchor.href=url;anchor.download="config.js";anchor.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
-const emptyMsg=()=>S.user&&S.user.role==="trainee"?"No trainee record is linked to this account. Please ask your administrator to check your login.":scoped().length?"No trainees match your search.":canAddTrainee()?"No trainees yet. Use “Add trainee” in the profile menu.":"No trainees to show yet.";
+const emptyMsg=()=>S.user&&S.user.role==="trainee"?"No trainee record is linked to this account. Please ask your administrator to check your login.":scoped().length?"No trainees match your search.":canAddTrainee()?"No trainees yet. Use “Add trainee” on a business card.":"No trainees to show yet.";
 function tcards(){
  const q=(S.q||"").trim().toLowerCase(),L=filtered();
  return L.length?'<div class="gl">'+L.map(t=>{const[s,c]=status(t),l=cur(t),n=done(t);return `<div class="card item" data-a="open" data-id="${t.id}">
@@ -451,16 +451,17 @@ function hierBranches(L){
 }
 function hierarchy(){
  const L=filtered();
- if(!L.length)return '<div class="mu">'+(S.t.length?"No trainees match your search.":"No trainees yet. Use “Add trainee” in the profile menu.")+'</div>';
+ if(!L.length)return '<div class="mu">'+(S.t.length?"No trainees match your search.":"No trainees yet. Use “Add trainee” on a business card.")+'</div>';
  if(S.view!=="overview")return '<div class="card hy">'+hierBranches(L)+'</div>';
  return BIZ.map(b=>{const bl=L.filter(t=>biz(t)===b);return bl.length?`<div class="card hy"><div class="hy-h hy-top"><h2>${esc(b)}</h2><span class="mu">${bl.length} ${bl.length===1?"trainee":"trainees"}</span></div>${hierBranches(bl)}</div>`:""}).join("");
 }
 const bstats=L=>{const dn=L.filter(t=>status(t)[0]==="Completed").length;return{n:L.length,dn,ip:L.length-dn}};
 function bizCards(){
- return '<div class="bg">'+vbiz().map(b=>{const k=bstats(scoped().filter(t=>biz(t)===b));return `<div class="card item bz" data-a="openbiz" data-b="${esc(b)}" role="button" tabindex="0">
-  <div class="sp"><b>${esc(b)}</b></div>
+ return '<div class="bg">'+vbiz().map(b=>{const k=bstats(scoped().filter(t=>biz(t)===b));return `<div class="card bz">
+  <div class="sp"><button type="button" class="business-open" data-a="openbiz" data-b="${esc(b)}"><b>${esc(b)}</b></button></div>
   <div class="bn${k.n?"":" zero"}">${k.n}</div><div class="mu">${k.n===1?"trainee":"trainees"}</div>
-  <div class="bs mu"><span>${k.ip} in progress</span><span>${k.dn} completed</span></div></div>`}).join("")+'</div>';
+  <div class="bs mu"><span>${k.ip} in progress</span><span>${k.dn} completed</span></div>
+  ${canAddTrainee()?`<button type="button" class="business-add sm" data-a="addopen" data-b="${esc(b)}">＋ Add trainee</button>`:""}</div>`}).join("")+'</div>';
 }
 // ---- Hierarchy images (one per business, stored in the bucket)
 const HYMAX=10*1024*1024;
@@ -661,7 +662,7 @@ document.addEventListener("click",e=>{
  else if(a==="prev"){S.vm=vmod(t)[0]-1}
  else if(a==="next"){const[v,m]=vmod(t);if(v<m)S.vm=v+1;else if(waiting(t)!=null&&ST[waiting(t)].m===v+1){const d=now();t.logs.push({s:waiting(t),a:d,st:d});S.vm=null}}
  else if(a==="score"){S.modal=+b.dataset.mi}
- else if(a==="addopen"){S.add=true;S.addmsg="";S.addDraft={name:"",password:"",date:new Date().toISOString().slice(0,10),salary:"",wage:""};S.addBiz=S.view!=="overview"?S.view:(vbiz()[0]||"");S.addBranch=(addBranches(S.addBiz)[0]||{}).name||"";S.addDept=(addDepts()[0]||{}).name||"";S.addDesg=(addDesignations()[0]||{}).title||""}
+ else if(a==="addopen"){S.add=true;S.addmsg="";S.addDraft={name:"",password:"",date:new Date().toISOString().slice(0,10),salary:"",wage:""};S.addBiz=b.dataset.b|| (S.view!=="overview"?S.view:(vbiz()[0]||""));S.addBranch=(addBranches(S.addBiz)[0]||{}).name||"";S.addDept=(addDepts()[0]||{}).name||"";S.addDesg=(addDesignations()[0]||{}).title||""}
  else if(a==="accountopen"){S.accountModal=true;S.accountDone=false;S.accountMsg=""}
  else if(a==="accountcancel"){S.accountModal=false;S.accountDone=false;S.accountMsg=""}
  else if(a==="settings-open"){S.settings=true}
@@ -1009,7 +1010,7 @@ document.addEventListener("keydown",e=>{
   const profileMenu=document.querySelector(".profile-menu");
   if(profileMenu&&profileMenu.open){profileMenu.open=false;profileMenu.querySelector("summary").focus();return}
  }
- if((e.key==="Enter"||e.key===" ")&&e.target.classList&&(e.target.classList.contains("bz")||e.target.classList.contains("hy-t"))){e.preventDefault();e.target.click();return}
+ if((e.key==="Enter"||e.key===" ")&&e.target.classList&&e.target.classList.contains("hy-t")){e.preventDefault();e.target.click();return}
  if(e.key==="Escape"&&(S.modal!=null||S.edit||S.add||S.upload||S.video||S.map||S.settings||S.organization||S.permissions)){stopVideoPlayer();stopVideoPlayer("map-player");S.modal=null;S.edit=false;S.add=false;S.addDraft=null;S.upload=false;S.video=false;S.map=false;S.settings=false;S.organization=false;S.permissions=false;S.permissionDraft=null;S.mplay="";render()}
  else if(e.key==="Enter"&&S.add&&e.target.id.startsWith("add-category-name-")){const entity=e.target.id.slice("add-category-name-".length),b=document.querySelector(`[data-a="category-create"][data-entity="${entity}"]`);if(b)b.click()}
  else if(e.key==="Enter"&&S.add&&e.target.tagName==="INPUT"){const b=document.querySelector('[data-a="add"]');if(b)b.click()}
