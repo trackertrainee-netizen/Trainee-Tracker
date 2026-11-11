@@ -16,6 +16,7 @@ ACCOUNT_ID = os.getenv("ACCOUNT_ID")
 
 MAX_PRESENTATION_BYTES = 25 * 1024 * 1024
 HIERARCHY_PREFIX = "hierarchy"
+PRESENTATION_PREFIX = "presentations"
 
 
 def _get_s3_client():
