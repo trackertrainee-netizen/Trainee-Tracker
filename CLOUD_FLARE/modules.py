@@ -1,6 +1,8 @@
+import glob
 import json
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 
@@ -17,6 +19,27 @@ ACCOUNT_ID = os.getenv("ACCOUNT_ID")
 MAX_PRESENTATION_BYTES = 25 * 1024 * 1024
 HIERARCHY_PREFIX = "hierarchy"
 PRESENTATION_PREFIX = "presentations"
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _tool_path(name):
+    executable = name + ".exe" if os.name == "nt" else name
+    bundled = os.path.join(PROJECT_ROOT, "bin", executable)
+    if os.path.isfile(bundled):
+        return bundled
+    on_path = shutil.which(name)
+    if on_path:
+        return on_path
+    if os.name == "nt" and name == "rclone":
+        winget_root = os.path.join(
+            os.getenv("LOCALAPPDATA", ""),
+            "Microsoft", "WinGet", "Packages", "Rclone.Rclone_*",
+            "rclone-*-windows-amd64", executable,
+        )
+        installed = glob.glob(winget_root)
+        if installed:
+            return max(installed, key=os.path.getmtime)
+    return name
 
 
 def _get_s3_client():
@@ -151,7 +174,7 @@ def upload_directory_to_s3(directory_path, s3_path, env, progress, cancel_event=
     """Upload a directory with one rclone process and report its transfer progress."""
     _raise_if_cancelled(cancel_event)
     command = [
-        "rclone", "copy", os.fspath(directory_path), f"r2:{BUCKET_NAME}/{s3_path}",
+        _tool_path("rclone"), "copy", os.fspath(directory_path), f"r2:{BUCKET_NAME}/{s3_path}",
         "--stats", "1s", "--stats-one-line", "--stats-log-level", "NOTICE",
         "--log-level", "NOTICE",
     ]
@@ -187,7 +210,7 @@ def upload_directory_to_s3(directory_path, s3_path, env, progress, cancel_event=
 def _can_copy_to_hls(file_path):
     probe = subprocess.run(
         [
-            "ffprobe", "-v", "error",
+            _tool_path("ffprobe"), "-v", "error",
             "-show_entries", "stream=codec_type,codec_name,pix_fmt", "-of", "json",
             os.fspath(file_path),
         ],
@@ -212,7 +235,7 @@ def _video_duration(file_path):
     """Duration in seconds, or None if it cannot be determined."""
     try:
         out = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+            [_tool_path("ffprobe"), "-v", "error", "-show_entries", "format=duration",
              "-of", "default=nw=1:nk=1", os.fspath(file_path)],
             check=True, capture_output=True, text=True,
         ).stdout.strip()
@@ -283,7 +306,7 @@ def upload_video_as_hls(file_path, folder_name, progress=None, cancel_event=None
         report("converting", 0)
         _run_ffmpeg_hls(
             [
-                "ffmpeg", "-y", "-nostdin", "-i", os.fspath(file_path),
+                _tool_path("ffmpeg"), "-y", "-nostdin", "-i", os.fspath(file_path),
                 "-map", "0:v:0", "-map", "0:a:0?",
                 *codec_args,
                 "-hls_time", "6", "-hls_playlist_type", "vod",

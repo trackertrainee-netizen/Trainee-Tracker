@@ -698,7 +698,7 @@ document.addEventListener("click",e=>{
   const password=document.getElementById("tp").value;if(password.length<6){S.addmsg="Password must be at least 6 characters.";document.getElementById("add-error").textContent=S.addmsg;return}
   const d=now(),g=i=>document.getElementById(i).value.trim(),business=g("bz"),department=g("dp"),branch=g("br"),designation=g("ds");
   if(!vbiz().includes(business)||!addDepts().some(x=>sameName(x.name,department))||!addBranches(business).some(x=>sameName(x.name,branch))||!addDesignations().some(x=>sameName(x.title,designation))){S.addmsg="Choose an available business, branch, department, and designation.";render();return}
-  S.t.push({id:crypto.randomUUID(),biz:business,name:n,dept:department,branch,desg:designation,join:g("jd"),sal:g("sl"),wage:g("wg"),start:d,logs:[{s:0,a:d}],account_password:password});S.add=false;S.addDraft=null;S.addmsg=""}
+  S.t.push({id:crypto.randomUUID(),biz:business,name:n,dept:department,branch,desg:designation,join:g("jd"),sal:g("sl"),wage:g("wg"),start:d,logs:[{s:0,a:d}],account_password:password});S.add=false;S.addDraft=null;S.addmsg="";S.userManagement=true}
  else if(a==="nav-dashboard"){S.nav="dashboard";S.view="overview";S.bv="overview";S.q=""}
  else if(a==="nav-trainees"){S.nav="trainees";S.view="overview";S.bv="overview";S.q=""}
  else if(a==="nav-businesses"){S.nav="businesses";S.view="overview";S.bv="overview";S.q=""}
