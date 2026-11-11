@@ -30,6 +30,31 @@ create table if not exists public.trainee_progress (
   check (presentation is null or jsonb_typeof(presentation) = 'object')
 );
 
+create table if not exists public.video_watch_completions (
+  trainee_id uuid not null references public.trainees(id) on delete cascade,
+  step_index smallint not null references public.training_steps(step_index),
+  watched_at timestamptz not null default now(),
+  primary key (trainee_id, step_index)
+);
+
+create table if not exists public.video_replay_requests (
+  id uuid primary key default gen_random_uuid(),
+  trainee_id uuid not null references public.trainees(id) on delete cascade,
+  step_index smallint not null references public.training_steps(step_index),
+  status text not null default 'pending' check (status in ('pending', 'approved', 'declined', 'used')),
+  created_at timestamptz not null default now(),
+  reviewed_at timestamptz,
+  reviewed_by uuid references public.profiles(id),
+  check (
+    (status = 'pending' and reviewed_at is null and reviewed_by is null)
+    or (status <> 'pending' and reviewed_at is not null and reviewed_by is not null)
+  )
+);
+
+create unique index if not exists idx_video_replay_requests_pending
+  on public.video_replay_requests (trainee_id, step_index)
+  where status = 'pending';
+
 create table if not exists public.trainee_module_scores (
   trainee_id uuid not null references public.trainees(id) on delete cascade,
   module_index smallint not null references public.training_modules(module_index),
@@ -98,6 +123,8 @@ create index if not exists idx_training_steps_module
   on public.training_steps (module_index, step_index);
 create index if not exists idx_trainee_progress_step
   on public.trainee_progress (step_index);
+create index if not exists idx_video_replay_requests_created
+  on public.video_replay_requests (created_at desc);
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('presentations', 'presentations', false, 26214400, array['application/pdf'])
@@ -505,3 +532,108 @@ left join lateral (
 ) scores on true;
 
 grant select on public.trainee_workflow to authenticated;
+
+alter table public.video_watch_completions enable row level security;
+alter table public.video_replay_requests enable row level security;
+
+drop policy if exists "video completion read in scope" on public.video_watch_completions;
+create policy "video completion read in scope" on public.video_watch_completions
+  for select to authenticated
+  using (
+    public.auth_trainee_id() = trainee_id
+    or (
+      public.auth_role() in ('developer', 'business')
+      and exists (
+        select 1
+        from public.trainees t
+        join public.designations g on g.id = t.designation_id
+        join public.departments d on d.id = g.department_id
+        join public.branches b on b.id = d.branch_id
+        where t.id = video_watch_completions.trainee_id
+          and public.in_scope(b.business_id, b.id, d.id)
+      )
+    )
+  );
+
+drop policy if exists "trainee records video completion" on public.video_watch_completions;
+create policy "trainee records video completion" on public.video_watch_completions
+  for insert to authenticated
+  with check (
+    public.auth_role() = 'trainee'
+    and public.auth_trainee_id() = trainee_id
+    and exists (
+      select 1 from public.training_steps s
+      where s.step_index = video_watch_completions.step_index
+        and s.step_type = 'VIDEO'
+    )
+  );
+
+drop policy if exists "video replay request read in scope" on public.video_replay_requests;
+create policy "video replay request read in scope" on public.video_replay_requests
+  for select to authenticated
+  using (
+    public.auth_trainee_id() = trainee_id
+    or (
+      public.auth_role() in ('developer', 'business')
+      and exists (
+        select 1
+        from public.trainees t
+        join public.designations g on g.id = t.designation_id
+        join public.departments d on d.id = g.department_id
+        join public.branches b on b.id = d.branch_id
+        where t.id = video_replay_requests.trainee_id
+          and public.in_scope(b.business_id, b.id, d.id)
+      )
+    )
+  );
+
+drop policy if exists "trainee requests video replay" on public.video_replay_requests;
+create policy "trainee requests video replay" on public.video_replay_requests
+  for insert to authenticated
+  with check (
+    public.auth_role() = 'trainee'
+    and public.auth_trainee_id() = trainee_id
+    and status = 'pending'
+    and reviewed_at is null
+    and reviewed_by is null
+    and exists (
+      select 1
+      from public.video_watch_completions w
+      join public.training_steps s on s.step_index = w.step_index
+      where w.trainee_id = video_replay_requests.trainee_id
+        and w.step_index = video_replay_requests.step_index
+        and s.step_type = 'VIDEO'
+    )
+  );
+
+drop policy if exists "business HR reviews replay request" on public.video_replay_requests;
+create policy "business HR reviews replay request" on public.video_replay_requests
+  for update to authenticated
+  using (
+    status = 'pending'
+    and public.can_edit_trainee_progress(trainee_id)
+  )
+  with check (
+    status in ('approved', 'declined')
+    and reviewed_at is not null
+    and reviewed_by = auth.uid()
+    and public.can_edit_trainee_progress(trainee_id)
+  );
+
+drop policy if exists "trainee uses approved replay request" on public.video_replay_requests;
+create policy "trainee uses approved replay request" on public.video_replay_requests
+  for update to authenticated
+  using (
+    public.auth_trainee_id() = trainee_id
+    and status = 'approved'
+  )
+  with check (
+    public.auth_trainee_id() = trainee_id
+    and status = 'used'
+    and reviewed_at is not null
+    and reviewed_by is not null
+  );
+
+grant select, insert on public.video_watch_completions to authenticated;
+grant select, insert on public.video_replay_requests to authenticated;
+grant update (status, reviewed_at, reviewed_by) on public.video_replay_requests to authenticated;

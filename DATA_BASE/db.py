@@ -305,13 +305,16 @@ class DataBase:
                 progress = {
                     "trainee_id": trainee_id,
                     "step_index": step_index,
-                    "assigned_at": log.get("a"),
                     "started_at": log.get("st"),
                     "completed_at": log.get("c"),
-                    "verified_by": log.get("v"),
-                    "verified_at": log.get("vt"),
                     "presentation": log.get("pdf"),
                 }
+                if not trainee_role:
+                    progress.update({
+                        "assigned_at": log.get("a"),
+                        "verified_by": log.get("v"),
+                        "verified_at": log.get("vt"),
+                    })
                 progress_query = self.client.table("trainee_progress")
                 progress_key = (trainee_id, step_index)
                 if progress_key in existing_progress:

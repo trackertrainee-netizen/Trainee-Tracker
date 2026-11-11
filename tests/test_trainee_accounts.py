@@ -220,7 +220,14 @@ class TraineeAccountTests(unittest.TestCase):
                 {
                     "id": TRAINEE_ID,
                     "logs": [
-                        {"s": 0, "a": "2026-11-11T10:00:00Z", "st": "2026-11-11T10:01:00Z", "c": "2026-11-11T10:02:00Z"},
+                        {
+                            "s": 0,
+                            "a": "changed-assignment",
+                            "st": "2026-11-11T10:01:00Z",
+                            "c": "2026-11-11T10:02:00Z",
+                            "v": "HR",
+                            "vt": "changed-verification",
+                        },
                         {"s": 1, "a": "2026-11-11T10:02:00Z"},
                     ],
                 }
@@ -233,6 +240,26 @@ class TraineeAccountTests(unittest.TestCase):
             if operation[0] == "trainee_progress" and operation[1] != "select"
         ]
         self.assertEqual([operation[1] for operation in progress_operations], ["update", "insert"])
+        self.assertEqual(
+            progress_operations[0][2],
+            {
+                "trainee_id": TRAINEE_ID,
+                "step_index": 0,
+                "started_at": "2026-11-11T10:01:00Z",
+                "completed_at": "2026-11-11T10:02:00Z",
+                "presentation": None,
+            },
+        )
+        self.assertEqual(
+            progress_operations[1][2],
+            {
+                "trainee_id": TRAINEE_ID,
+                "step_index": 1,
+                "started_at": None,
+                "completed_at": None,
+                "presentation": None,
+            },
+        )
 
 
 if __name__ == "__main__":

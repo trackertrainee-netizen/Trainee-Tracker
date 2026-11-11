@@ -100,7 +100,25 @@ function traineeAccountModal(t){
  return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="account-title"><div class="bd" data-a="accountcancel"></div><div class="mb"><h2 id="account-title">${done?"Login is ready":"Set trainee login"}</h2><div class="mu">Username: <b>${esc(t.name)}</b></div>${done?`<div class="mu" role="status" style="margin-top:12px">${esc(S.accountMsg)} Sign in with this name and the password you just set.</div><div class="row" style="margin-top:16px;justify-content:flex-end"><button class="p" data-a="accountcancel">Done</button></div>`:`<div class="mu" style="margin:10px 0">Choose a password for this trainee. Use the trainee name above as the username.</div><label class="fl">New password<div class="pw-wrap"><input id="account-password" type="password" minlength="6" autocomplete="new-password" required>${passwordToggle("account-password")}</div></label><label class="fl">Type the password again<div class="pw-wrap"><input id="account-confirm" type="password" minlength="6" autocomplete="new-password" required>${passwordToggle("account-confirm")}</div></label><div class="lg-err" role="status" aria-live="polite">${esc(S.accountMsg)}</div><div class="row" style="margin-top:16px;justify-content:flex-end"><button data-a="accountcancel">Cancel</button><button class="p" data-a="accountset">Save login</button></div>`}</div></div>`;
 }
 function videoModal(){
+ if(S.user.role==="trainee"&&S.videoStep!=null){
+  const step=ST[S.videoStep];
+   return `<div class="trainee-video-screen" id="trainee-video-shell" role="dialog" aria-modal="true" aria-labelledby="video-title"><header class="trainee-video-heading"><h1 id="video-title">${esc(step.n)}</h1><span>Training video · ${esc(MODS[step.m].n)}</span></header><video id="video-player" class="trainee-video-player" aria-labelledby="video-title" playsinline preload="metadata"></video><div id="video-player-status" class="trainee-video-status" role="status" aria-live="polite">Loading video…</div><div class="trainee-video-controls"><button type="button" class="p" data-a="trainee-video-toggle" id="trainee-video-toggle">Play</button><button type="button" data-a="trainee-video-rewind">Rewind 10 seconds</button><button type="button" data-a="trainee-video-return" id="trainee-video-return" hidden>Return to where you first rewound</button></div><section class="trainee-video-finished" id="trainee-video-finished" hidden><b>Video finished</b><div id="video-replay-status" class="trainee-video-status" role="status" aria-live="polite">Saving video completion…</div><button type="button" class="p" data-a="video-replay-request" id="video-replay-request" disabled>Request replay from HR</button><button type="button" data-a="trainee-video-continue">Continue</button></section></div>`;
+ }
+ if(S.user.role==="trainee"&&S.replayGateStep!=null){
+   const step=ST[S.replayGateStep],request=(S.videoReplayRequests||[]).find(item=>item.step_index===S.replayGateStep);
+   const approved=request&&request.status==="approved",pending=request&&request.status==="pending";
+   const checking=S.replayGateMsg==="Checking HR approval…",loadFailed=!!S.videoCompletionError;
+   return `<div class="trainee-video-screen" id="trainee-video-shell" role="dialog" aria-modal="true" aria-labelledby="video-title"><header class="trainee-video-heading"><h1 id="video-title">${esc(step.n)}</h1><span>This video has already been completed.</span></header><div class="replay-gate-message" id="video-replay-status" role="status" aria-live="polite">${approved?"Business HR approved another viewing.":pending?"Your replay request is waiting for business HR approval.":esc(S.videoCompletionError||S.replayGateMsg||"Request a replay from your business HR to watch this video again.")}</div>${approved?`<button type="button" class="p" data-a="replay-approved" data-id="${esc(request.id)}">Start approved replay</button>`:pending||checking||loadFailed?"":`<button type="button" class="p" data-a="video-replay-request" id="video-replay-request">Request replay from HR</button>`}<button type="button" data-a="replay-gate-close">Back to training</button></div>`;
+ }
  return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="video-title"><div class="bd" data-a="videocancel"></div><div class="mb wide"><h2 id="video-title">Watch video</h2><label class="fl">Video folder<select id="video-library-folder"><option value="">Loading folders…</option></select></label><div id="video-player-status" class="mu video-player-status" role="status" aria-live="polite"></div><video id="video-player" class="video-player" controls playsinline preload="metadata" hidden></video><div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="videocancel">Close</button></div></div></div>`;
+}
+function replayRequestsModal(){
+ const rows=(S.replayInboxData||[]).map(item=>{
+  const trainee=S.t.find(record=>record.id===item.trainee_id),step=ST[item.step_index];
+  const status=item.status==="approved"?"Approved":item.status==="declined"?"Declined":item.status==="used"?"Replay used":"Pending";
+  return `<article class="replay-request"><div><b>${esc(trainee?trainee.name:"Trainee")}</b><div class="mu">${esc(step?step.n:"Video task")} · Requested ${fmt(item.created_at)}</div><span class="chip ${item.status==="pending"?"s-rdy":item.status==="approved"?"ok":"s-locked"}">${status}</span></div>${item.status==="pending"?`<div class="row"><button type="button" data-a="replay-decision" data-id="${esc(item.id)}" data-status="declined">Decline</button><button type="button" class="p" data-a="replay-decision" data-id="${esc(item.id)}" data-status="approved">Approve</button></div>`:""}</article>`;
+ }).join("");
+ return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="replay-inbox-title"><div class="bd" data-a="replay-inbox-close"></div><div class="mb wide"><h2 id="replay-inbox-title">Video replay requests</h2><div class="mu" role="status">${esc(S.replayInboxMsg||"")}</div>${rows||(!S.replayInboxMsg?"<div class=\"mu\">No replay requests yet.</div>":"")}<div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="replay-inbox-close">Close</button></div></div></div>`;
 }
 function mapModal(){
  const vs=mvideos(S.mm);
@@ -125,6 +143,7 @@ function mapModal(){
 }
 function modal(t){
  if(S.permissions)return permissionsModal();
+ if(S.replayInbox)return replayRequestsModal();
  if(S.userManagement)return userManagementModal();
  if(S.settings)return settingsModal();
  if(S.userModal)return userModal();
@@ -158,7 +177,7 @@ const mv=mi=>ST.filter(x=>x.m===mi&&x.t==="VIDEO").reduce((a,x)=>a+x.min,0);
 // ---- State
 const BIZ=BUSINESSES;
 const biz=t=>t.biz||"";
-let S={t:[],sel:null,upload:false,video:false,hls:null,view:"overview",bv:"overview",nav:"dashboard",map:false,settings:false,userManagement:false,userModal:false,userDraft:null,userMsg:"",organization:false,permissions:false,permissionDraft:null,permissionMsg:"",accountModal:false,accountDone:false,accountMsg:"",orgEntity:"business",orgParent:"",orgName:"",orgMsg:"",vmap:{},folders:[],mb:"Magnus",mm:0,mt:null,mf:"",mplay:"",mmsg:"",mfstat:"",himg:{},hmsg:{},user:null,options:{businesses:[],branches:[],departments:[],designations:[]},addBiz:"",addBranch:"",addDept:"",addDesg:"",addmsg:"",loginmsg:""};
+let S={t:[],sel:null,upload:false,video:false,videoStep:null,replayGateStep:null,replayGateMsg:"",completedVideoSteps:[],videoReplayRequests:[],videoCompletionError:"",videoFinished:false,videoWatchSaved:false,videoReplayRequested:false,videoReturnAt:null,videoLatestTime:0,videoSeekTarget:null,hls:null,view:"overview",bv:"overview",nav:"dashboard",map:false,replayInbox:false,replayInboxData:[],replayInboxMsg:"",settings:false,userManagement:false,userModal:false,userDraft:null,userMsg:"",organization:false,permissions:false,permissionDraft:null,permissionMsg:"",accountModal:false,accountDone:false,accountMsg:"",orgEntity:"business",orgParent:"",orgName:"",orgMsg:"",vmap:{},folders:[],mb:"Magnus",mm:0,mt:null,mf:"",mplay:"",mmsg:"",mfstat:"",himg:{},hmsg:{},user:null,options:{businesses:[],branches:[],departments:[],designations:[]},addBiz:"",addBranch:"",addDept:"",addDesg:"",addmsg:"",loginmsg:""};
 let activeVideoUpload=null;
 // ---- Supabase Auth-backed roles
 const sameName=(a,b)=>String(a||"").trim().toLowerCase()===String(b||"").trim().toLowerCase();
@@ -198,7 +217,7 @@ const roleLabel=()=>S.user?(ROLE_LABELS[S.user.role]||S.user.role):"";
 const scopeLabel=()=>{const u=S.user;if(!u)return"";if(ALLBIZ(u))return"All businesses";
  if(u.business&&u.business.name)return [u.business.name,u.branch&&u.branch.name,u.department&&u.department.name].filter(Boolean).join(" · ");
  return""};
-const initView=()=>{S.sel=null;S.vm=null;S.q="";S.bv="overview";S.nav="dashboard";S.modal=null;S.edit=false;S.add=false;S.accountModal=false;S.accountDone=false;S.accountMsg="";S.upload=false;S.video=false;S.map=false;S.settings=false;S.userManagement=false;S.userModal=false;S.userDraft=null;S.userMsg="";S.organization=false;S.permissions=false;S.permissionDraft=null;S.view=oneBiz()?vbiz()[0]:"overview"};
+const initView=()=>{S.sel=null;S.vm=null;S.q="";S.bv="overview";S.nav="dashboard";S.modal=null;S.edit=false;S.add=false;S.accountModal=false;S.accountDone=false;S.accountMsg="";S.upload=false;S.video=false;S.videoStep=null;S.replayGateStep=null;S.replayGateMsg="";S.completedVideoSteps=[];S.videoReplayRequests=[];S.videoCompletionError="";S.videoFinished=false;S.videoWatchSaved=false;S.videoReplayRequested=false;S.videoReturnAt=null;S.videoLatestTime=0;S.videoSeekTarget=null;S.map=false;S.replayInbox=false;S.settings=false;S.userManagement=false;S.userModal=false;S.userDraft=null;S.userMsg="";S.organization=false;S.permissions=false;S.permissionDraft=null;S.view=oneBiz()?vbiz()[0]:"overview"};
 async function login(username,password){
  const response=await fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username,password})});
  const result=await response.json().catch(()=>({}));
@@ -207,7 +226,9 @@ async function login(username,password){
  S.loginmsg="";
  await loadOptions();
  await load();
- initView();render();
+ initView();
+ if(S.user.role==="trainee")await loadVideoCompletions();
+ render();
  loadMap();loadHier();
 }
 function logout(){
@@ -302,12 +323,20 @@ function render(){
  // Keep an open pop-up in place and only refresh its contents, so its fade/pop-in never replays (no blinking).
  const tmp=document.createElement("div");
  tmp.innerHTML=`<div class="shell">${side(t)}<main class="mn">${topbar()}${t?detail(t):list()}</main></div>`+modal(t);
+ const oldVideoScreen=ap.querySelector(":scope > .trainee-video-screen"),newVideoScreen=tmp.querySelector(":scope > .trainee-video-screen");
+ if(oldVideoScreen&&newVideoScreen){
+  ap.querySelector(":scope > .shell").replaceWith(tmp.querySelector(":scope > .shell"));
+  oldVideoScreen.className=newVideoScreen.className;
+  oldVideoScreen.innerHTML=newVideoScreen.innerHTML;
+  oldVideoScreen.setAttribute("aria-labelledby",newVideoScreen.getAttribute("aria-labelledby"));
+ }else{
  const oldOv=ap.querySelector(":scope > .ov"),newOv=tmp.querySelector(":scope > .ov"),oldMb=oldOv&&oldOv.querySelector(".mb"),newMb=newOv&&newOv.querySelector(".mb");
  if(oldMb&&newMb&&oldOv.getAttribute("aria-labelledby")===newOv.getAttribute("aria-labelledby")){
   const bx=oldMb.scrollTop;
   ap.querySelector(":scope > .shell").replaceWith(tmp.querySelector(":scope > .shell")); // pop-up node is never detached, so its animation cannot restart
   oldMb.className=newMb.className;oldMb.innerHTML=newMb.innerHTML;oldMb.scrollTop=bx;
  }else ap.replaceChildren(...tmp.childNodes);
+ }
  if(viewChanged){S.lv=vk;ap.classList.remove("an");void ap.offsetWidth;ap.classList.add("an");clearTimeout(S.antm);S.antm=setTimeout(()=>ap.classList.remove("an"),1400)}
  if(S.add){const i=document.getElementById("nm");if(i)i.focus()}
  else if(t&&(S.modal!=null||S.edit)){const i=document.getElementById(S.edit?"en-nm":"ms-sc");if(i){i.focus();if(S.edit)i.select()}}
@@ -322,8 +351,9 @@ function side(t){
  const brand=`<div class="bk"><div class="lg">M</div><div><div class="brand">Magnus</div><div class="mu">Trainee Tracker</div></div></div>`;
  const navButton=(key,icon,label)=>`<button type="button" class="nav-link${S.nav===key?" active":""}" data-a="nav-${key}"><span class="nav-ico" aria-hidden="true">${icon}</span><span>${label}</span></button>`;
  const mediaButton=(permission,action,icon,label)=>allow(permission)?`<button type="button" class="nav-link" data-a="${action}"><span class="nav-ico" aria-hidden="true">${icon}</span><span>${label}</span></button>`:"";
+ const media=[mediaButton("upload","uploadopen","↑","Upload video"),S.user.role==="trainee"?"":mediaButton("watch","videoopen","▷","Watch video"),mediaButton("map","mapopen","↗","Map videos"),S.user.role==="business"?'<button type="button" class="nav-link" data-a="replay-inbox-open"><span class="nav-ico" aria-hidden="true">↻</span><span>Replay requests</span></button>':""].filter(Boolean).join("");
  const detailTools=t?`<div class="side-section"><div class="side-label">Trainee</div>${S.user.role==="trainee"?"":'<button type="button" class="nav-link" data-a="back"><span class="nav-ico" aria-hidden="true">‹</span><span>All trainees</span></button>'}${allow("ename")?'<button type="button" class="nav-link" data-a="ename"><span class="nav-ico" aria-hidden="true">✎</span><span>Edit name</span></button>':""}${canAddTrainee()?'<button type="button" class="nav-link" data-a="accountopen"><span class="nav-ico" aria-hidden="true">🔑</span><span>Set login password</span></button>':""}${allow("del")?`<button type="button" class="nav-link danger-link" data-a="del" data-id="${t.id}"><span class="nav-ico" aria-hidden="true">×</span><span>Remove trainee</span></button>`:""}</div>`:"";
- return `<aside class="sb">${brand}<nav class="side-nav" aria-label="Main navigation"><div class="side-section"><div class="side-label">Navigation</div>${navButton("dashboard","▦","Dashboard")}${S.user.role==="trainee"?"":navButton("businesses","▣","Businesses")}<button type="button" class="nav-link${S.settings?" active":""}" data-a="settings-open"><span class="nav-ico" aria-hidden="true">⚙</span><span>Settings</span></button></div>${detailTools}<div class="side-section"><div class="side-label">Media</div>${mediaButton("upload","uploadopen","↑","Upload video")}${mediaButton("watch","videoopen","▷","Watch video")}${mediaButton("map","mapopen","↗","Map videos")}</div></nav><div class="sidebar-bottom"><div class="side-foot"><div class="side-brand"><span>DATA ANALYST TEAM</span><b>MAGNUS</b></div></div></div></aside>`;
+ return `<aside class="sb">${brand}<nav class="side-nav" aria-label="Main navigation"><div class="side-section"><div class="side-label">Navigation</div>${navButton("dashboard","▦","Dashboard")}${S.user.role==="trainee"?"":navButton("businesses","▣","Businesses")}<button type="button" class="nav-link${S.settings?" active":""}" data-a="settings-open"><span class="nav-ico" aria-hidden="true">⚙</span><span>Settings</span></button></div>${detailTools}${media?`<div class="side-section"><div class="side-label">Media</div>${media}</div>`:""}</nav><div class="sidebar-bottom"><div class="side-foot"><div class="side-brand"><span>DATA ANALYST TEAM</span><b>MAGNUS</b></div></div></aside>`;
 }
 // ---- Trainee cards, filtered by the search box (name, department, designation, branch)
 const filtered=()=>{const q=(S.q||"").trim().toLowerCase();return scoped().filter(t=>(S.view==="overview"||biz(t)===S.view)&&[t.name,t.dept,t.desg,t.branch,biz(t)].some(v=>String(v||"").toLowerCase().includes(q)))};
@@ -669,6 +699,8 @@ document.addEventListener("click",e=>{
  if(a==="logout")return logout();
  if(["cmp","go","start","next"].includes(a)&&!allow("work"))return;
  const NEED={"settings-addtrainee":"add",addopen:"add",add:"add",accountopen:"add",accountset:"add",del:"del",ename:"ename",esave:"ename",uploadopen:"upload",hyremove:"hier",score:"score",msave:"score",csv:"csv"};
+ if(a==="videoopen"&&S.user.role==="trainee")return;
+ if(a==="replay-inbox-open"&&S.user.role!=="business")return;
  if(a.startsWith("permissions-")&&S.user.role!=="developer")return;
  if(a.startsWith("org")&&!canManageOrganization())return;
  if(a.startsWith("user")&&!canManageUsers())return;
@@ -686,6 +718,31 @@ document.addEventListener("click",e=>{
   return;
  }
  if(a.startsWith("map")&&!allow("map"))return;
+ if(a==="trainee-video-toggle"){
+  const player=document.getElementById("video-player");
+  if(!player)return;
+  if(player.paused){requestTraineeFullscreen();player.play().catch(error=>{const status=document.getElementById("video-player-status");if(status)status.textContent=`Playback could not start: ${error instanceof Error?error.message:String(error)}`})}
+  else player.pause();
+  return;
+ }
+ if(a==="trainee-video-rewind"){
+  const player=document.getElementById("video-player");if(!player)return;
+  if(S.videoReturnAt==null){S.videoReturnAt=player.currentTime;updateTraineeVideoControls()}
+  const target=Math.max(0,player.currentTime-10);S.videoSeekTarget=target;player.currentTime=target;return;
+ }
+ if(a==="trainee-video-return"){
+  const player=document.getElementById("video-player");if(!player||S.videoReturnAt==null)return;
+  const target=S.videoReturnAt;S.videoReturnAt=null;S.videoSeekTarget=target;player.currentTime=target;updateTraineeVideoControls();return;
+ }
+ if(a==="video-replay-request")return requestVideoReplay();
+ if(a==="replay-approved")return startApprovedReplay(b.dataset.id);
+ if(a==="replay-gate-close"){stopVideoPlayer();S.video=false;S.videoStep=null;S.replayGateStep=null;return render()}
+ if(a==="trainee-video-continue"){
+  if(!S.videoFinished)return;
+  stopVideoPlayer();S.video=false;S.videoStep=null;S.videoFinished=false;render();return;
+ }
+ if(a==="replay-decision")return reviewVideoReplay(b.dataset.id,b.dataset.status);
+ if(a==="replay-inbox-close"){S.replayInbox=false;S.replayInboxMsg="";return render()}
  if(NEED[a]&&(NEED[a]==="add"?!canAddTrainee():!allow(NEED[a])))return;
  if(a==="accountset")return setTraineeLogin(t);
  if(a==="open"){const o=S.t.find(x=>x.id===b.dataset.id);if(!o||!inScope(o))return}
@@ -735,9 +792,10 @@ document.addEventListener("click",e=>{
  else if(a==="uploadcancel"){cancelVideoUpload();return}
  else if(a==="parent-create-cancel"){document.getElementById("parent-create-panel").hidden=true;document.getElementById("parent-folder-status").textContent="";return}
  else if(a==="parent-create"){createParentFolder();return}
- else if(a==="videoopen"){S.add=false;S.edit=false;S.modal=null;S.upload=false;S.video=true}
- else if(a==="videocancel"){stopVideoPlayer();S.video=false;S.vpre=""}
- else if(a==="watchstep"){const st=+b.dataset.s,f=t?vfolder(biz(t),st):"";if(!f)return;S.add=false;S.edit=false;S.modal=null;S.upload=false;S.map=false;S.vpre=f;S.video=true}
+ else if(a==="videoopen"){S.add=false;S.edit=false;S.modal=null;S.upload=false;S.videoStep=null;S.video=true}
+ else if(a==="videocancel"){stopVideoPlayer();S.video=false;S.videoStep=null;S.vpre=""}
+ else if(a==="watchstep"){const st=+b.dataset.s,f=t?vfolder(biz(t),st):"";if(!f||!ST[st]||ST[st].t!=="VIDEO")return;S.add=false;S.edit=false;S.modal=null;S.upload=false;S.map=false;S.vpre=f;S.video=true;S.videoStep=S.user.role==="trainee"?st:null;S.replayGateStep=null;S.replayGateMsg="";if(S.user.role==="trainee"&&(S.videoCompletionError||S.completedVideoSteps.includes(st))){S.videoStep=null;S.replayGateStep=st;S.replayGateMsg=S.videoCompletionError||"Checking HR approval…"}S.videoFinished=false;S.videoWatchSaved=false;S.videoReplayRequested=false;S.videoReturnAt=null;S.videoLatestTime=0;S.videoSeekTarget=null}
+ else if(a==="replay-inbox-open"){S.replayInbox=true;S.replayInboxData=[];S.replayInboxMsg="Loading requests…"}
  else if(a==="mcancel"){S.modal=null;S.edit=false;if(S.add)S.userManagement=true;S.add=false;S.addDraft=null}
  else if(a==="ename"){S.edit=true}
  else if(a==="esave"){const el=document.getElementById("en-nm"),n=el.value.trim();if(!n)return el.focus();t.name=n;S.edit=false}
@@ -749,7 +807,8 @@ document.addEventListener("click",e=>{
  render();
  if(a==="uploadopen")loadParentFolders();
  if(a==="videoopen")loadVideoFolders();
- if(a==="watchstep")loadVideoFolders(S.vpre);
+ if(a==="watchstep"){if(S.user.role!=="trainee")loadVideoFolders(S.vpre);else if(S.videoStep!=null){requestTraineeFullscreen();loadVideoFolders(S.vpre)}else if(S.replayGateStep!=null)loadReplayRequestsForGate()}
+ if(a==="replay-inbox-open")loadReplayRequests();
 });
 
 document.addEventListener("change",e=>{
@@ -870,7 +929,122 @@ async function loadVideoFolders(pre=""){
 function stopVideoPlayer(id="video-player"){
  if(S.hls){S.hls.destroy();S.hls=null}
  const player=document.getElementById(id);
- if(player){player.onerror=null;player.pause();player.removeAttribute("src");player.load()}
+ if(player){player.onerror=null;player.onended=null;player.ontimeupdate=null;player.onseeking=null;player.pause();player.removeAttribute("src");player.load()}
+ const shell=document.getElementById("trainee-video-shell");
+ if(shell&&document.fullscreenElement===shell&&document.exitFullscreen)document.exitFullscreen().catch(()=>{});
+}
+
+function requestTraineeFullscreen(){
+ const shell=document.getElementById("trainee-video-shell");
+ const status=document.getElementById("video-player-status")||document.getElementById("video-replay-status");
+ const fallback=()=>{if(status)status.textContent="Browser fullscreen is unavailable; the video remains in full-page view."};
+ if(!shell||!shell.requestFullscreen){fallback();return}
+ shell.requestFullscreen().catch(fallback);
+}
+async function saveVideoWatchCompletion(){
+ const status=document.getElementById("video-player-status"),finished=document.getElementById("trainee-video-finished");
+ if(finished)finished.hidden=false;
+ document.querySelectorAll(".trainee-video-controls button").forEach(control=>{control.disabled=true});
+ if(status)status.textContent="Video finished. Saving completion…";
+ try{
+  const response=await fetch("/api/video-watch-completions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({step_index:S.videoStep})});
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(result.error||"Could not save video completion.");
+  S.videoWatchSaved=true;
+  if(!S.completedVideoSteps.includes(S.videoStep))S.completedVideoSteps.push(S.videoStep);
+  const controls=document.querySelectorAll(".trainee-video-controls button");controls.forEach(control=>{control.disabled=true});
+  if(finished)finished.hidden=false;
+  const button=document.getElementById("video-replay-request");
+  if(button)button.disabled=false;
+  const replayStatus=document.getElementById("video-replay-status");
+  if(replayStatus)replayStatus.textContent="Need to watch again? Ask your business HR for permission.";
+ }catch(error){
+  if(status)status.textContent=`Video ended, but completion could not be saved: ${error instanceof Error?error.message:String(error)}. Please contact HR.`;
+  if(finished)finished.hidden=false;
+ }
+}
+async function requestVideoReplay(){
+ const button=document.getElementById("video-replay-request"),status=document.getElementById("video-replay-status");
+ const stepIndex=S.videoStep==null?S.replayGateStep:S.videoStep;
+ if(!button||stepIndex==null||(S.videoStep!=null&&!S.videoWatchSaved)||S.videoReplayRequested)return;
+ button.disabled=true;
+ if(status)status.textContent="Sending request to your business HR…";
+ try{
+  const response=await fetch("/api/video-replay-requests",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({step_index:stepIndex})});
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(result.error||"Could not send the replay request.");
+  S.videoReplayRequested=true;
+  S.videoReplayRequests=S.videoReplayRequests.filter(item=>!(item.step_index===stepIndex&&item.status==="pending"));
+  S.videoReplayRequests.unshift({step_index:stepIndex,status:"pending"});
+  button.textContent="Replay request sent";
+  if(status)status.textContent="Your replay request is in the business HR queue.";
+ }catch(error){
+  button.disabled=false;
+  if(status)status.textContent=error instanceof Error?error.message:String(error);
+ }
+}
+function updateTraineeVideoControls(){
+ const player=document.getElementById("video-player"),toggle=document.getElementById("trainee-video-toggle"),back=document.getElementById("trainee-video-return");
+ if(toggle&&player)toggle.textContent=player.paused?"Play":"Pause";
+ if(back)back.hidden=S.videoReturnAt==null;
+}
+async function loadReplayRequests(){
+ try{
+  const response=await fetch("/api/video-replay-requests");
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(result.error||"Could not load replay requests.");
+  if(!Array.isArray(result))throw new Error("The server returned an invalid replay request list.");
+  S.replayInboxData=result;S.videoReplayRequests=result;S.replayInboxMsg="";
+ }catch(error){S.replayInboxData=[];S.replayInboxMsg=error instanceof Error?error.message:String(error)}
+ if(S.replayInbox)render();
+}
+async function loadVideoCompletions(){
+ try{
+  const response=await fetch("/api/video-watch-completions");
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(result.error||"Could not load video completion.");
+  if(!Array.isArray(result))throw new Error("The server returned an invalid video completion list.");
+  S.completedVideoSteps=result.map(item=>item.step_index);
+  S.videoCompletionError="";
+ }catch(error){
+  S.videoCompletionError=error instanceof Error?error.message:String(error);
+ }
+}
+async function loadReplayRequestsForGate(){
+ try{
+  const response=await fetch("/api/video-replay-requests");
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(result.error||"Could not check HR approval.");
+  if(!Array.isArray(result))throw new Error("The server returned an invalid replay request list.");
+  S.videoReplayRequests=result;S.replayGateMsg="";
+ }catch(error){S.videoReplayRequests=[];S.replayGateMsg=error instanceof Error?error.message:String(error)}
+ if(S.video&&S.replayGateStep!=null)render();
+}
+async function startApprovedReplay(id){
+ requestTraineeFullscreen();
+ const stepIndex=S.replayGateStep,trainee=ownRec(),folder=trainee?vfolder(biz(trainee),stepIndex):"";
+ if(!folder){S.replayGateMsg="The video is no longer mapped. Ask HR for help.";return render()}
+ try{
+  const response=await fetch(`/api/video-replay-requests/${encodeURIComponent(id)}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({status:"used"})});
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(result.error||"Could not use the approved replay.");
+  S.videoReplayRequests=S.videoReplayRequests.map(item=>item.id===id?{...item,status:"used"}:item);
+  S.video=true;S.videoStep=stepIndex;S.replayGateStep=null;S.videoFinished=false;S.videoWatchSaved=false;S.videoReplayRequested=false;S.videoReturnAt=null;S.videoLatestTime=0;S.videoSeekTarget=null;S.vpre=folder;
+  render();
+  loadVideoFolders(folder);
+ }catch(error){
+  S.replayGateMsg=error instanceof Error?error.message:String(error);
+  return render();
+ }
+}
+async function reviewVideoReplay(id,status){
+ try{
+  const response=await fetch(`/api/video-replay-requests/${encodeURIComponent(id)}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({status})});
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(result.error||"Could not update the replay request.");
+  S.replayInboxMsg=`Request ${status}.`;
+  await loadReplayRequests();
+ }catch(error){S.replayInboxMsg=error instanceof Error?error.message:String(error);render()}
 }
 
 function playVideo(folder,pid="video-player",sid="video-player-status"){
@@ -878,6 +1052,22 @@ function playVideo(folder,pid="video-player",sid="video-player-status"){
  if(!player||!status)return;
  stopVideoPlayer(pid);
  if(!folder){player.hidden=true;status.textContent="Choose a folder to play its video.";return}
+ if(pid==="video-player"&&S.user.role==="trainee"&&S.videoStep!=null){
+  player.controls=false;
+  player.onended=()=>{S.videoFinished=true;if(!S.completedVideoSteps.includes(S.videoStep))S.completedVideoSteps.push(S.videoStep);saveVideoWatchCompletion()};
+  player.ontimeupdate=()=>{S.videoLatestTime=player.currentTime;updateTraineeVideoControls()};
+  player.onseeking=()=>{
+   if(S.videoSeekTarget!=null&&Math.abs(player.currentTime-S.videoSeekTarget)<0.5){S.videoLatestTime=player.currentTime;S.videoSeekTarget=null;return}
+   if(player.currentTime>S.videoLatestTime+1){S.videoSeekTarget=S.videoLatestTime;player.currentTime=S.videoLatestTime;return}
+   if(player.currentTime<S.videoLatestTime-1&&S.videoReturnAt==null){
+    S.videoReturnAt=S.videoLatestTime;
+    const back=document.getElementById("trainee-video-return");if(back)back.hidden=false;
+   }
+   S.videoLatestTime=player.currentTime;
+  };
+  player.onplay=updateTraineeVideoControls;
+  player.onpause=updateTraineeVideoControls;
+ }
  const playlist="/api/videos/"+folder.split("/").map(encodeURIComponent).join("/")+"/index.m3u8";
  player.hidden=false;
  player.onerror=()=>{status.textContent="Could not load this video. Check the playlist and storage."};
@@ -1063,6 +1253,9 @@ function csv(){
  const u=URL.createObjectURL(new Blob([s],{type:"text/csv"})),a=document.createElement("a");a.href=u;a.download="trainee-log.csv";a.click();
 }
 document.addEventListener("keydown",e=>{
+ if(S.video&&S.user&&S.user.role==="trainee"){
+  if(["Escape","PrintScreen","ArrowLeft","ArrowRight"].includes(e.key)){e.preventDefault();e.stopImmediatePropagation();return}
+ }
  if(e.key==="Escape"){
   const profileMenu=document.querySelector(".profile-menu");
   if(profileMenu&&profileMenu.open){profileMenu.open=false;profileMenu.querySelector("summary").focus();return}
@@ -1072,6 +1265,9 @@ document.addEventListener("keydown",e=>{
  else if(e.key==="Enter"&&S.add&&e.target.id.startsWith("add-category-name-")){const entity=e.target.id.slice("add-category-name-".length),b=document.querySelector(`[data-a="category-create"][data-entity="${entity}"]`);if(b)b.click()}
  else if(e.key==="Enter"&&S.add&&e.target.tagName==="INPUT"){const b=document.querySelector('[data-a="add"]');if(b)b.click()}
  else if(e.key==="Enter"&&e.target.id==="en-nm"){const b=document.querySelector('[data-a="esave"]');if(b)b.click()}
+});
+document.addEventListener("contextmenu",e=>{
+ if(S.video&&S.user&&S.user.role==="trainee")e.preventDefault();
 });
 document.addEventListener("input",e=>{
  if(e.target.id==="org-name")S.orgName=e.target.value;
