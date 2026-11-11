@@ -1,0 +1,115 @@
+/* Traklyn-style look: soft blue-grey canvas, floating sidebar, white rounded cards.
+   Loaded after style.css, so delete this file + its <link> to go back to the old look. */
+:root{
+ --bg:#eef2f6;--card:#ffffff;--sidebar:rgba(255,255,255,.55);--tx:#16222e;--mu:#5d6b79;
+ --bd:#dde4eb;--bd2:#cbd5df;--gold:#14513f;--gold2:#1d6a54;--on-gold:#ffffff;--hi:rgba(20,81,63,.06);
+ --ink:#123b35;--navy:#14513f;
+ --sh:0 1px 2px rgba(22,40,58,.05),0 8px 24px -14px rgba(22,40,58,.22);
+ --r:.875rem;
+}
+body{background:linear-gradient(180deg,#f2f5f9 0%,#e9eef4 100%) fixed;color:var(--tx)}
+h1,h2{font-weight:600}
+
+/* ---- Shell: dark edge strip + floating sidebar */
+.w{padding:0}
+.shell{display:grid;grid-template-columns:15.5rem minmax(0,1fr);gap:0;min-height:100vh;
+ background:linear-gradient(90deg,#0f2233 0,#0f2233 .5rem,transparent .5rem)}
+.sb{position:sticky;top:1rem;height:calc(100vh - 2rem);min-height:0;margin:1rem 0 1rem 1rem;
+ padding:1.25rem .875rem 1rem;border:1px solid rgba(255,255,255,.7)!important;border-radius:1.25rem;
+ background:linear-gradient(180deg,rgba(255,255,255,.78),rgba(232,239,246,.78));
+ backdrop-filter:blur(8px);box-shadow:0 1px 2px rgba(22,40,58,.05),0 16px 40px -22px rgba(22,40,58,.35)}
+.bk{margin:0 0 1.5rem;padding:0 .375rem}
+.lg{width:2.5rem;height:2.5rem;border-radius:.625rem;background:linear-gradient(145deg,#14513f,#0d3a2d);
+ color:#fff;box-shadow:0 4px 10px -4px rgba(13,58,45,.6);font-size:1.25rem}
+.brand{color:var(--tx);font-size:1.0625rem}
+.side-nav{gap:1.125rem}
+.side-label{color:#6b7886;font-size:.6875rem;letter-spacing:.09em}
+.nav-link{border-radius:.75rem;padding:.6rem .75rem;color:#3f4d5b;font-weight:500;transition:background .15s,box-shadow .15s,color .15s}
+.nav-link:hover{background:rgba(255,255,255,.7);color:var(--tx)}
+.nav-link.active{background:#fff;color:var(--tx);font-weight:600;box-shadow:0 1px 2px rgba(22,40,58,.06),0 6px 14px -8px rgba(22,40,58,.3)}
+.nav-ico{color:#4d5b69}
+.nav-link.active .nav-ico{color:var(--gold)}
+.side-foot{border:0}
+.side-brand span,.side-brand b{color:#9aa6b2;font-family:var(--serif);font-weight:500;letter-spacing:.12em;font-size:.6875rem}
+.sidebar-bottom{padding-top:.75rem;border-top:1px solid var(--bd)}
+
+/* ---- Top bar */
+.mn{padding:0 2rem 2rem 1.75rem}
+.topbar{min-height:4.75rem;margin-bottom:1rem;padding-top:.25rem}
+.top-search{width:min(31rem,56%);background:#fff;border:1px solid var(--bd2);border-radius:.75rem;padding:.125rem .875rem;
+ box-shadow:0 1px 2px rgba(22,40,58,.04)}
+.top-search:focus-within{border-color:var(--gold);box-shadow:0 0 0 3px rgba(20,81,63,.15)}
+.top-search>span{color:#6b7886}
+.top-actions{gap:.875rem}
+.bell{width:2.25rem;height:2.25rem;padding:0;border:0;background:transparent;color:#2a3744;display:grid;place-items:center;border-radius:50%}
+.bell:hover{background:var(--hi)}
+.bell svg{width:1.2rem;height:1.2rem;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.avatar{background:linear-gradient(145deg,#1d6a54,#0f3a2e);color:#fff;border:2px solid #fff;box-shadow:0 2px 6px rgba(22,40,58,.2)}
+.profile-dropdown{border-radius:.875rem;box-shadow:0 18px 40px -16px rgba(22,40,58,.4)}
+
+/* ---- Page header */
+.ph h1{font-size:2.125rem;font-weight:700;letter-spacing:-.015em}
+.ph .mu{font-size:.8125rem;color:#4d5b69}
+
+/* ---- Buttons */
+button{border-radius:.625rem;background:#fff;border-color:var(--bd2)}
+button.p{background:linear-gradient(180deg,#1d6a54,#14513f);color:#fff;border-color:transparent;
+ box-shadow:0 6px 14px -8px rgba(20,81,63,.8)}
+button.p:hover{filter:brightness(1.08)}
+.pill.on{background:linear-gradient(180deg,#1d6a54,#14513f);color:#fff}
+
+/* ---- Stat tiles: centred, white, thin coloured top bar */
+.tg>.tl{position:relative;overflow:hidden;align-items:center;text-align:center;background:#fff;
+ border:1px solid var(--bd);border-radius:var(--r);padding:1.125rem 1rem 1rem;box-shadow:var(--sh)}
+.tg>.tl::before{content:"";position:absolute;left:18%;right:18%;top:0;height:.1875rem;border-radius:0 0 .25rem .25rem;background:#6c7f91}
+.tg>.tl:nth-child(2)::before{background:#2f78b5}
+.tg>.tl:nth-child(3)::before{background:#c79a3f}
+.tg>.tl:nth-child(4)::before{background:#9aa6b2}
+.tl b{font-family:var(--serif);font-weight:600;font-size:2rem;line-height:1.15;color:#1b2a38}
+.tl .mu{color:#4d5b69}
+.card .tl{box-shadow:none}
+
+/* ---- Cards */
+.card{background:#fff;border:1px solid var(--bd);border-radius:var(--r);box-shadow:var(--sh)}
+.bh{font-family:var(--serif);font-size:1.25rem;font-weight:600;margin:1.5rem 0 .75rem}
+.bg{grid-template-columns:repeat(4,minmax(0,1fr));gap:1rem}
+.bg .card{border-radius:var(--r);padding:1.125rem 1.25rem;box-shadow:var(--sh)}
+.bg .item b{font-family:var(--serif);font-size:1.125rem;font-weight:600}
+.bg .bn{font-family:var(--serif);font-size:2.25rem;font-weight:600}
+.bg .bn.zero{color:#9aa6b2}
+.bs{flex-direction:row!important;flex-wrap:wrap;gap:.375rem!important;margin-top:.625rem}
+.bs span{padding:.1875rem .625rem;border-radius:62rem;background:#eaf0f6;border:1px solid #d5dfe9;color:#3f4d5b;font-size:.75rem;font-weight:600}
+.bs span:nth-child(2){background:#e7f3ee;border-color:#cfe6db;color:#176148}
+.item:hover{border-color:#a9bdb3;transform:translateY(-2px);box-shadow:0 14px 28px -16px rgba(22,40,58,.35)}
+
+/* ---- View selector, inputs */
+.vw select{background:#fff;border-radius:.625rem;border-color:var(--bd2)}
+input,select,textarea{border-radius:.625rem}
+input:focus,select:focus,textarea:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(20,81,63,.15)}
+
+/* ---- Tables, modals */
+th{color:#5d6b79}
+.mb{border-radius:1.125rem;background:#fff}
+.chip{font-weight:600}
+
+/* ---- Responsive */
+@media (max-width:1100px){.shell{grid-template-columns:13rem minmax(0,1fr)}.bg{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:760px){
+ .shell{display:flex;flex-direction:column;background:none}
+ .sb{position:relative;top:0;height:auto;margin:.75rem .75rem 0;padding:.875rem}
+ .mn{padding:0 1rem 1.5rem}
+}
+@media (max-width:480px){.bg{grid-template-columns:1fr}}
+
+/* ---- Dark theme keeps the same layout with deep-green surfaces */
+:root[data-theme="dark"]{--bg:#08150e;--card:rgba(22,58,42,.42);--tx:#EEEBDA;--mu:#a3bcae;--bd:rgba(52,176,112,.26);--bd2:rgba(52,176,112,.42);--gold:#8fe0b8;--gold2:#b5f0d2;--on-gold:#0D2818}
+:root[data-theme="dark"] body{background:radial-gradient(75rem 43.75rem at 70% -10%,#0f2e1f 0%,#08150e 60%) fixed,#08150e}
+:root[data-theme="dark"] .sb{background:rgba(22,58,42,.55);border-color:var(--bd)!important}
+:root[data-theme="dark"] .card,:root[data-theme="dark"] .tg>.tl,:root[data-theme="dark"] .top-search,:root[data-theme="dark"] .mb,:root[data-theme="dark"] button{background:var(--card);color:var(--tx)}
+:root[data-theme="dark"] .tl b,:root[data-theme="dark"] .nav-link,:root[data-theme="dark"] .nav-ico,:root[data-theme="dark"] .bell,:root[data-theme="dark"] .brand{color:var(--tx)}
+:root[data-theme="dark"] .nav-link.active{background:rgba(255,255,255,.08)}
+:root[data-theme="dark"] button.p{background:#EEEBDA;color:#0D2818}
+:root[data-theme="dark"] .bs span{background:rgba(255,255,255,.06);border-color:var(--bd);color:var(--tx)}
+
+/* Tiles fill the row whether the app shows 3 or 4 of them */
+@media (min-width:1024px){.tg{grid-template-columns:repeat(auto-fit,minmax(11rem,1fr))}}

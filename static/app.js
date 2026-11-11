@@ -313,15 +313,14 @@ function render(){
 // ---- Left sidebar (dashboard layout)
 function topbar(){
  const name=S.user.full_name||roleLabel(),initial=String(name).trim().slice(0,1).toUpperCase();
- return `<header class="topbar"><label class="top-search"><span aria-hidden="true">⌕</span><input id="q" type="search" value="${esc(S.q||"")}" placeholder="Search trainees, departments, designations…" aria-label="Search trainees" autocomplete="off"></label><div class="top-actions">${allow("csv")?'<button type="button" class="top-secondary" data-a="csv">Export CSV</button>':""}${canAddTrainee()?'<button type="button" class="p" data-a="addopen">＋ Add trainee</button>':""}<button type="button" class="tt" data-a="theme" title="Toggle theme" aria-label="Toggle theme">${curTheme()==="dark"?SUN:MOON}</button><div class="top-profile"><span class="avatar">${esc(initial||"U")}</span><div><b>${esc(name)}</b><span>${esc(roleLabel())}</span></div></div></div></header>`;
+ return `<header class="topbar"><label class="top-search"><span aria-hidden="true">⌕</span><input id="q" type="search" value="${esc(S.q||"")}" placeholder="Search trainees, departments, designations…" aria-label="Search trainees" autocomplete="off"></label><div class="top-actions"><button type="button" class="bell" aria-label="Notifications" title="Notifications"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 8 3 8H3s3-1 3-8"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg></button><details class="profile-menu"><summary class="top-profile"><span class="avatar">${esc(initial||"U")}</span><div><b>${esc(name)}</b><span>${esc(roleLabel())}</span></div><span class="profile-caret" aria-hidden="true">⌄</span></summary><div class="profile-dropdown">${canAddTrainee()?'<button type="button" data-a="addopen"><span>Add trainee</span></button>':""}${allow("csv")?'<button type="button" data-a="csv"><span>Export CSV</span></button>':""}<button type="button" data-a="theme"><span>Toggle theme</span></button><button type="button" data-a="logout"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17l5-5-5-5M15 12H3"/><path d="M12 3h7a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-7"/></svg><span>Logout</span></button></div></details></div></header>`;
 }
 function side(t){
  const brand=`<div class="bk"><div class="lg">M</div><div><div class="brand">Magnus</div><div class="mu">Trainee Tracker</div></div></div>`;
  const navButton=(key,icon,label)=>`<button type="button" class="nav-link${S.nav===key?" active":""}" data-a="nav-${key}"><span class="nav-ico" aria-hidden="true">${icon}</span><span>${label}</span></button>`;
  const mediaButton=(permission,action,icon,label)=>allow(permission)?`<button type="button" class="nav-link" data-a="${action}"><span class="nav-ico" aria-hidden="true">${icon}</span><span>${label}</span></button>`:"";
  const detailTools=t?`<div class="side-section"><div class="side-label">Trainee</div>${S.user.role==="trainee"?"":'<button type="button" class="nav-link" data-a="back"><span class="nav-ico" aria-hidden="true">‹</span><span>All trainees</span></button>'}${allow("ename")?'<button type="button" class="nav-link" data-a="ename"><span class="nav-ico" aria-hidden="true">✎</span><span>Edit name</span></button>':""}${canAddTrainee()?'<button type="button" class="nav-link" data-a="accountopen"><span class="nav-ico" aria-hidden="true">🔑</span><span>Set login password</span></button>':""}${allow("del")?`<button type="button" class="nav-link danger-link" data-a="del" data-id="${t.id}"><span class="nav-ico" aria-hidden="true">×</span><span>Remove trainee</span></button>`:""}</div>`:"";
- const who=`<div class="who"><span class="avatar">${esc(String(S.user.full_name||roleLabel()).trim().slice(0,1).toUpperCase()||"U")}</span><div class="who-info"><b>${esc(S.user.full_name||roleLabel())}</b><span>${esc(roleLabel())}${scopeLabel()?" · "+esc(scopeLabel()):""}</span></div><button type="button" class="sm" data-a="logout">Sign out</button></div>`;
- return `<aside class="sb">${brand}<nav class="side-nav" aria-label="Main navigation"><div class="side-section"><div class="side-label">Navigation</div>${navButton("dashboard","▦","Dashboard")}${navButton("trainees","♙","Trainees")}${S.user.role==="trainee"?"":navButton("businesses","▣","Businesses")}<button type="button" class="nav-link${S.settings?" active":""}" data-a="settings-open"><span class="nav-ico" aria-hidden="true">⚙</span><span>Settings</span></button></div>${detailTools}<div class="side-section"><div class="side-label">Media</div>${mediaButton("upload","uploadopen","↑","Upload video")}${mediaButton("watch","videoopen","▷","Watch video")}${mediaButton("map","mapopen","↗","Map videos")}</div></nav><div class="sidebar-bottom">${who}<div class="side-foot"><span>Training duration</span><b>${hm(AT)}</b><small>${ST.length} steps · ${hm(VT)} video</small>${tbtn()}</div></div></aside>`;
+ return `<aside class="sb">${brand}<nav class="side-nav" aria-label="Main navigation"><div class="side-section"><div class="side-label">Navigation</div>${navButton("dashboard","▦","Dashboard")}${navButton("trainees","♙","Trainees")}${S.user.role==="trainee"?"":navButton("businesses","▣","Businesses")}<button type="button" class="nav-link${S.settings?" active":""}" data-a="settings-open"><span class="nav-ico" aria-hidden="true">⚙</span><span>Settings</span></button></div>${detailTools}<div class="side-section"><div class="side-label">Media</div>${mediaButton("upload","uploadopen","↑","Upload video")}${mediaButton("watch","videoopen","▷","Watch video")}${mediaButton("map","mapopen","↗","Map videos")}</div></nav><div class="sidebar-bottom"><div class="side-foot"><div class="side-brand"><span>DATA ANALYST TEAM</span><b>MAGNUS</b></div></div></div></aside>`;
 }
 // ---- Trainee cards, filtered by the search box (name, department, designation, branch)
 const filtered=()=>{const q=(S.q||"").trim().toLowerCase();return scoped().filter(t=>(S.view==="overview"||biz(t)===S.view)&&[t.name,t.dept,t.desg,t.branch,biz(t)].some(v=>String(v||"").toLowerCase().includes(q)))};
@@ -431,7 +430,7 @@ function downloadPermissionConfig(){
  const url=URL.createObjectURL(new Blob([contents],{type:"text/javascript"})),anchor=document.createElement("a");
  anchor.href=url;anchor.download="config.js";anchor.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
-const emptyMsg=()=>S.user&&S.user.role==="trainee"?"No trainee record is linked to this account. Please ask your administrator to check your login.":scoped().length?"No trainees match your search.":canAddTrainee()?"No trainees yet. Use “Add trainee” in the sidebar.":"No trainees to show yet.";
+const emptyMsg=()=>S.user&&S.user.role==="trainee"?"No trainee record is linked to this account. Please ask your administrator to check your login.":scoped().length?"No trainees match your search.":canAddTrainee()?"No trainees yet. Use “Add trainee” in the profile menu.":"No trainees to show yet.";
 function tcards(){
  const q=(S.q||"").trim().toLowerCase(),L=filtered();
  return L.length?'<div class="gl">'+L.map(t=>{const[s,c]=status(t),l=cur(t),n=done(t);return `<div class="card item" data-a="open" data-id="${t.id}">
@@ -451,7 +450,7 @@ function hierBranches(L){
 }
 function hierarchy(){
  const L=filtered();
- if(!L.length)return '<div class="mu">'+(S.t.length?"No trainees match your search.":"No trainees yet. Use “Add trainee” in the sidebar.")+'</div>';
+ if(!L.length)return '<div class="mu">'+(S.t.length?"No trainees match your search.":"No trainees yet. Use “Add trainee” in the profile menu.")+'</div>';
  if(S.view!=="overview")return '<div class="card hy">'+hierBranches(L)+'</div>';
  return BIZ.map(b=>{const bl=L.filter(t=>biz(t)===b);return bl.length?`<div class="card hy"><div class="hy-h hy-top"><h2>${esc(b)}</h2><span class="mu">${bl.length} ${bl.length===1?"trainee":"trainees"}</span></div>${hierBranches(bl)}</div>`:""}).join("");
 }
@@ -459,7 +458,7 @@ const bstats=L=>{const dn=L.filter(t=>status(t)[0]==="Completed").length;return{
 function bizCards(){
  return '<div class="bg">'+vbiz().map(b=>{const k=bstats(scoped().filter(t=>biz(t)===b));return `<div class="card item bz" data-a="openbiz" data-b="${esc(b)}" role="button" tabindex="0">
   <div class="sp"><b>${esc(b)}</b></div>
-  <div class="bn">${k.n}</div><div class="mu">${k.n===1?"trainee":"trainees"}</div>
+  <div class="bn${k.n?"":" zero"}">${k.n}</div><div class="mu">${k.n===1?"trainee":"trainees"}</div>
   <div class="bs mu"><span>${k.ip} in progress</span><span>${k.dn} completed</span></div></div>`}).join("")+'</div>';
 }
 // ---- Hierarchy images (one per business, stored in the bucket)
@@ -610,6 +609,8 @@ const nav=`<div class="navbar"><button class="gh" data-a="prev" ${vm<=0?"disable
 
 // ---- Actions
 document.addEventListener("click",e=>{
+ const profileMenu=document.querySelector(".profile-menu");
+ if(profileMenu&&!profileMenu.contains(e.target))profileMenu.open=false;
  const b=e.target.closest("[data-a]");if(!b)return;const a=b.dataset.a,t=S.t.find(x=>x.id===S.sel);
  if(a==="password-toggle"){const input=document.getElementById(b.dataset.target);if(!input)return;const visible=input.type==="password";input.type=visible?"text":"password";b.setAttribute("aria-label",visible?"Hide password":"Show password");b.title=visible?"Hide password":"Show password";b.innerHTML=visible?EYE_OFF:EYE;return}
  if(a==="logout")return logout();
@@ -1002,6 +1003,10 @@ function csv(){
  const u=URL.createObjectURL(new Blob([s],{type:"text/csv"})),a=document.createElement("a");a.href=u;a.download="trainee-log.csv";a.click();
 }
 document.addEventListener("keydown",e=>{
+ if(e.key==="Escape"){
+  const profileMenu=document.querySelector(".profile-menu");
+  if(profileMenu&&profileMenu.open){profileMenu.open=false;profileMenu.querySelector("summary").focus();return}
+ }
  if((e.key==="Enter"||e.key===" ")&&e.target.classList&&(e.target.classList.contains("bz")||e.target.classList.contains("hy-t"))){e.preventDefault();e.target.click();return}
  if(e.key==="Escape"&&(S.modal!=null||S.edit||S.add||S.upload||S.video||S.map||S.settings||S.organization||S.permissions)){stopVideoPlayer();stopVideoPlayer("map-player");S.modal=null;S.edit=false;S.add=false;S.addDraft=null;S.upload=false;S.video=false;S.map=false;S.settings=false;S.organization=false;S.permissions=false;S.permissionDraft=null;S.mplay="";render()}
  else if(e.key==="Enter"&&S.add&&e.target.id.startsWith("add-category-name-")){const entity=e.target.id.slice("add-category-name-".length),b=document.querySelector(`[data-a="category-create"][data-entity="${entity}"]`);if(b)b.click()}
