@@ -126,6 +126,7 @@ function mapModal(){
 function modal(t){
  if(S.permissions)return permissionsModal();
  if(S.settings)return settingsModal();
+ if(S.userModal)return userModal();
  if(S.organization)return organizationModal();
  if(S.map)return mapModal();
  if(S.upload)return uploadModal();
@@ -156,7 +157,7 @@ const mv=mi=>ST.filter(x=>x.m===mi&&x.t==="VIDEO").reduce((a,x)=>a+x.min,0);
 // ---- State
 const BIZ=BUSINESSES;
 const biz=t=>t.biz||"";
-let S={t:[],sel:null,upload:false,video:false,hls:null,view:"overview",bv:"overview",nav:"dashboard",map:false,settings:false,organization:false,permissions:false,permissionDraft:null,permissionMsg:"",accountModal:false,accountDone:false,accountMsg:"",orgEntity:"business",orgParent:"",orgName:"",orgMsg:"",vmap:{},folders:[],mb:"Magnus",mm:0,mt:null,mf:"",mplay:"",mmsg:"",mfstat:"",himg:{},hmsg:{},user:null,options:{businesses:[],branches:[],departments:[],designations:[]},addBiz:"",addBranch:"",addDept:"",addDesg:"",addmsg:"",loginmsg:""};
+let S={t:[],sel:null,upload:false,video:false,hls:null,view:"overview",bv:"overview",nav:"dashboard",map:false,settings:false,userModal:false,userDraft:null,userMsg:"",organization:false,permissions:false,permissionDraft:null,permissionMsg:"",accountModal:false,accountDone:false,accountMsg:"",orgEntity:"business",orgParent:"",orgName:"",orgMsg:"",vmap:{},folders:[],mb:"Magnus",mm:0,mt:null,mf:"",mplay:"",mmsg:"",mfstat:"",himg:{},hmsg:{},user:null,options:{businesses:[],branches:[],departments:[],designations:[]},addBiz:"",addBranch:"",addDept:"",addDesg:"",addmsg:"",loginmsg:""};
 let activeVideoUpload=null;
 // ---- Supabase Auth-backed roles
 const sameName=(a,b)=>String(a||"").trim().toLowerCase()===String(b||"").trim().toLowerCase();
@@ -196,7 +197,7 @@ const roleLabel=()=>S.user?(ROLE_LABELS[S.user.role]||S.user.role):"";
 const scopeLabel=()=>{const u=S.user;if(!u)return"";if(ALLBIZ(u))return"All businesses";
  if(u.business&&u.business.name)return [u.business.name,u.branch&&u.branch.name,u.department&&u.department.name].filter(Boolean).join(" · ");
  return""};
-const initView=()=>{S.sel=null;S.vm=null;S.q="";S.bv="overview";S.nav="dashboard";S.modal=null;S.edit=false;S.add=false;S.accountModal=false;S.accountDone=false;S.accountMsg="";S.upload=false;S.video=false;S.map=false;S.settings=false;S.organization=false;S.permissions=false;S.permissionDraft=null;S.view=oneBiz()?vbiz()[0]:"overview"};
+const initView=()=>{S.sel=null;S.vm=null;S.q="";S.bv="overview";S.nav="dashboard";S.modal=null;S.edit=false;S.add=false;S.accountModal=false;S.accountDone=false;S.accountMsg="";S.upload=false;S.video=false;S.map=false;S.settings=false;S.userModal=false;S.userDraft=null;S.userMsg="";S.organization=false;S.permissions=false;S.permissionDraft=null;S.view=oneBiz()?vbiz()[0]:"overview"};
 async function login(username,password){
  const response=await fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username,password})});
  const result=await response.json().catch(()=>({}));
@@ -359,7 +360,7 @@ function organizationModal(){
  const labels={business:"Business",branch:"Branch",department:"Department",designation:"Designation"};
  const parents=organizationParents(S.orgEntity);
  const parent=S.orgEntity==="business"?"":`<label class="fl">Under<select id="org-parent">${parents.map(x=>`<option value="${esc(x.id)}"${x.id===S.orgParent?" selected":""}>${esc(x.label)}</option>`).join("")}</select></label>`;
- return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="org-title"><div class="bd" data-a="orgclose"></div><div class="mb"><h2 id="org-title">Manage organization</h2><label class="fl">Record type<select id="org-entity">${Object.entries(labels).map(([key,label])=>`<option value="${key}"${key===S.orgEntity?" selected":""}>${label}</option>`).join("")}</select></label>${parent}<label class="fl">${labels[S.orgEntity]} name<input id="org-name" value="${esc(S.orgName)}" maxlength="120"></label><div class="lg-err" role="status">${esc(S.orgMsg)}</div><div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="orgclose">Close</button><button type="button" class="p" data-a="orgcreate"${S.orgEntity!=="business"&&!parents.length?" disabled":""}>Create ${labels[S.orgEntity]}</button></div></div></div>`;
+ return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="org-title"><div class="bd" data-a="orgclose"></div><div class="mb"><h2 id="org-title">Manage organization</h2><label class="fl">Record type<select id="org-entity">${Object.entries(labels).map(([key,label])=>`<option value="${key}"${key===S.orgEntity?" selected":""}>${label}</option>`).join("")}</select></label>${parent}<label class="fl">${labels[S.orgEntity]} name<input id="org-name" value="${esc(S.orgName)}" maxlength="120"></label><div class="lg-err" role="status">${esc(S.orgMsg)}</div><div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="orgclose">Close</button>${canAddTrainee()?'<button type="button" data-a="settings-addtrainee">＋ Add trainee</button>':""}<button type="button" class="p" data-a="orgcreate"${S.orgEntity!=="business"&&!parents.length?" disabled":""}>Create ${labels[S.orgEntity]}</button></div></div></div>`;
 }
 async function createOrganizationRecord(){
  const entity=S.orgEntity,parentId=S.orgParent;
@@ -397,11 +398,56 @@ function permissionsModal(){
  const rows=Object.entries(PERM_LABELS).map(([permission,label])=>`<tr><td>${esc(label)}</td>${roles.map(role=>`<td style="text-align:center"><input type="checkbox" class="permission-toggle" data-role="${esc(role)}" data-permission="${esc(permission)}"${draft[role]&&draft[role][permission]?" checked":""}${role==="developer"?" disabled":""} aria-label="${esc(label+" — "+(ROLE_LABELS[role]||role))}"></td>`).join("")}</tr>`).join("");
  return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="permissions-title"><div class="bd" data-a="permissions-close"></div><div class="mb wide acc"><h2 id="permissions-title">Role permissions</h2><div class="mu">Choose which actions are shown for each existing role. Developer permissions stay enabled.</div><div class="sc"><table><tr><th>Permission</th>${header}</tr>${rows}</table></div><div class="mu" role="status">${esc(S.permissionMsg||"")}</div><div class="mu" style="margin-top:8px">These switches control the app interface only; Supabase and API policies still enforce server-side access. Save applies on this browser. Download config.js and deploy it to share the settings with everyone.</div><div class="row" style="margin-top:14px;justify-content:flex-end"><button type="button" data-a="permissions-close">Close</button><button type="button" data-a="permissions-download">Download config.js</button><button type="button" class="p" data-a="permissions-save">Save permissions</button></div></div></div>`;
 }
+const canManageUsers=()=>!!(S.user&&["developer","business"].includes(S.user.role));
 function settingsModal(){
  const organization=canManageOrganization()?'<button type="button" class="settings-action" data-a="orgopen"><span>Manage organization</span><small>Businesses, branches, departments and designations</small></button>':"";
+ const users=canManageUsers()?'<button type="button" class="settings-action" data-a="useropen"><span>Add users</span><small>Create sign-in accounts for developers, business users and viewers</small></button>':"";
+ const trainee=canAddTrainee()?'<button type="button" class="settings-action" data-a="settings-addtrainee"><span>Add trainee</span><small>Create a trainee login inside a business</small></button>':"";
  const permissions=S.user.role==="developer"?'<button type="button" class="settings-action" data-a="permissions-open"><span>Role permissions</span><small>Choose which actions are shown for each role</small></button>':"";
- return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="settings-title"><div class="bd" data-a="settings-close"></div><div class="mb settings-modal"><h2 id="settings-title">Settings</h2><div class="mu">Manage your workspace preferences.</div><div class="settings-actions">${organization}${permissions}<button type="button" class="settings-action" data-a="theme"><span>Appearance</span><small>Switch between light and dark theme</small></button></div><div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="settings-close">Close</button></div></div></div>`;
+ return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="settings-title"><div class="bd" data-a="settings-close"></div><div class="mb settings-modal"><h2 id="settings-title">Settings</h2><div class="mu">Manage your workspace preferences.</div><div class="settings-actions">${organization}${trainee}${users}${permissions}<button type="button" class="settings-action" data-a="theme"><span>Appearance</span><small>Switch between light and dark theme</small></button></div><div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="settings-close">Close</button></div></div></div>`;
 }
+function openUserModal(){
+ if(!canManageUsers())return;
+ const own=S.user.role==="business"?((S.user.business||{}).id||""):((S.options.businesses[0]||{}).id||"");
+ S.settings=false;S.userModal=true;S.userMsg="";
+ S.userDraft={username:"",password:"",role:"business_view",business_id:own};
+}
+function userModal(){
+ const d=S.userDraft||{},dev=S.user.role==="developer";
+ const roles=(dev?["developer","business","business_view"]:["business","business_view"]);
+ const needsBiz=d.role!=="developer";
+ const bizField=!needsBiz?"":dev?`<label>Business<select id="u-biz">${S.options.businesses.map(x=>`<option value="${esc(x.id)}"${x.id===d.business_id?" selected":""}>${esc(x.name)}</option>`).join("")}</select></label>`:`<div class="mu">New users are added to ${esc((S.user.business||{}).name||"your business")}.</div>`;
+ return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="user-title"><div class="bd" data-a="userclose"></div><div class="mb"><h2 id="user-title">Add users</h2><div class="mu">Create a sign-in account. They log in with this username and password.</div><label class="fl">Username<input id="u-name" maxlength="120" autocomplete="off" value="${esc(d.username||"")}"></label><label class="fl">Password<div class="pw-wrap"><input id="u-pass" type="password" minlength="6" autocomplete="new-password" value="${esc(d.password||"")}">${passwordToggle("u-pass")}</div></label><label class="fl">Role<select id="u-role">${roles.map(r=>`<option value="${esc(r)}"${r===d.role?" selected":""}>${esc(ROLE_LABELS[r]||r)}</option>`).join("")}</select></label>${bizField}<div class="lg-err" role="status">${esc(S.userMsg)}</div><div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="userclose">Close</button><button type="button" class="p" data-a="usercreate">Create user</button></div></div></div>`;
+}
+async function createUser(){
+ const d=S.userDraft;if(!d)return;
+ const body={username:(d.username||"").trim(),password:d.password||"",role:d.role,business_id:d.role==="developer"?null:d.business_id||null};
+ if(!body.username){S.userMsg="Enter a username.";render();return}
+ if(body.password.length<6){S.userMsg="Password must be at least 6 characters.";render();return}
+ if(body.role!=="developer"&&!body.business_id){S.userMsg="Choose a business.";render();return}
+ try{
+  const response=await fetch("/api/users",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(result.error||"Could not create the user.");
+  S.userDraft={username:"",password:"",role:d.role,business_id:d.business_id};
+  S.userMsg=`Created ${ROLE_LABELS[body.role]||body.role} "${result.username||body.username}".`;
+ }catch(error){S.userMsg=error instanceof Error?error.message:String(error)}
+ render();
+}
+function openAddTrainee(business){
+ S.settings=false;S.organization=false;S.add=true;S.addmsg="";S.addDraft={name:"",password:"",date:new Date().toISOString().slice(0,10),salary:"",wage:""};
+ S.addBiz=business||(S.view!=="overview"?S.view:(vbiz()[0]||""));S.addBranch=(addBranches(S.addBiz)[0]||{}).name||"";S.addDept=(addDepts()[0]||{}).name||"";S.addDesg=(addDesignations()[0]||{}).title||"";
+}
+document.addEventListener("input",e=>{
+ if(!S.userDraft)return;
+ const fields={"u-name":"username","u-pass":"password"};
+ if(fields[e.target.id])S.userDraft[fields[e.target.id]]=e.target.value;
+});
+document.addEventListener("change",e=>{
+ if(!S.userDraft)return;
+ if(e.target.id==="u-role"){S.userDraft.role=e.target.value;render()}
+ else if(e.target.id==="u-biz")S.userDraft.business_id=e.target.value;
+});
 function savePermissions(){
  if(!S.permissionDraft)return;
  Object.keys(ROLE_PERMS).forEach(role=>{
@@ -431,7 +477,7 @@ function downloadPermissionConfig(){
  const url=URL.createObjectURL(new Blob([contents],{type:"text/javascript"})),anchor=document.createElement("a");
  anchor.href=url;anchor.download="config.js";anchor.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
-const emptyMsg=()=>S.user&&S.user.role==="trainee"?"No trainee record is linked to this account. Please ask your administrator to check your login.":scoped().length?"No trainees match your search.":canAddTrainee()?"No trainees yet. Use “Add trainee” on a business card.":"No trainees to show yet.";
+const emptyMsg=()=>S.user&&S.user.role==="trainee"?"No trainee record is linked to this account. Please ask your administrator to check your login.":scoped().length?"No trainees match your search.":canAddTrainee()?"No trainees yet. Use Settings to add a trainee.":"No trainees to show yet.";
 function tcards(){
  const q=(S.q||"").trim().toLowerCase(),L=filtered();
  return L.length?'<div class="gl">'+L.map(t=>{const[s,c]=status(t),l=cur(t),n=done(t);return `<div class="card item" data-a="open" data-id="${t.id}">
@@ -451,7 +497,7 @@ function hierBranches(L){
 }
 function hierarchy(){
  const L=filtered();
- if(!L.length)return '<div class="mu">'+(S.t.length?"No trainees match your search.":"No trainees yet. Use “Add trainee” on a business card.")+'</div>';
+ if(!L.length)return '<div class="mu">'+(S.t.length?"No trainees match your search.":"No trainees yet. Use Settings to add a trainee.")+'</div>';
  if(S.view!=="overview")return '<div class="card hy">'+hierBranches(L)+'</div>';
  return BIZ.map(b=>{const bl=L.filter(t=>biz(t)===b);return bl.length?`<div class="card hy"><div class="hy-h hy-top"><h2>${esc(b)}</h2><span class="mu">${bl.length} ${bl.length===1?"trainee":"trainees"}</span></div>${hierBranches(bl)}</div>`:""}).join("");
 }
@@ -460,8 +506,7 @@ function bizCards(){
  return '<div class="bg">'+vbiz().map(b=>{const k=bstats(scoped().filter(t=>biz(t)===b));return `<div class="card bz">
   <div class="sp"><button type="button" class="business-open" data-a="openbiz" data-b="${esc(b)}"><b>${esc(b)}</b></button></div>
   <div class="bn${k.n?"":" zero"}">${k.n}</div><div class="mu">${k.n===1?"trainee":"trainees"}</div>
-  <div class="bs mu"><span>${k.ip} in progress</span><span>${k.dn} completed</span></div>
-  ${canAddTrainee()?`<button type="button" class="business-add sm" data-a="addopen" data-b="${esc(b)}">＋ Add trainee</button>`:""}</div>`}).join("")+'</div>';
+  <div class="bs mu"><span>${k.ip} in progress</span><span>${k.dn} completed</span></div></div>`}).join("")+'</div>';
 }
 // ---- Hierarchy images (one per business, stored in the bucket)
 const HYMAX=10*1024*1024;
@@ -618,9 +663,10 @@ document.addEventListener("click",e=>{
  if(a==="password-toggle"){const input=document.getElementById(b.dataset.target);if(!input)return;const visible=input.type==="password";input.type=visible?"text":"password";b.setAttribute("aria-label",visible?"Hide password":"Show password");b.title=visible?"Hide password":"Show password";b.innerHTML=visible?EYE_OFF:EYE;return}
  if(a==="logout")return logout();
  if(["cmp","go","start","next"].includes(a)&&!allow("work"))return;
- const NEED={addopen:"add",add:"add",accountopen:"add",accountset:"add",del:"del",ename:"ename",esave:"ename",uploadopen:"upload",hyremove:"hier",score:"score",msave:"score",csv:"csv"};
+ const NEED={"settings-addtrainee":"add",addopen:"add",add:"add",accountopen:"add",accountset:"add",del:"del",ename:"ename",esave:"ename",uploadopen:"upload",hyremove:"hier",score:"score",msave:"score",csv:"csv"};
  if(a.startsWith("permissions-")&&S.user.role!=="developer")return;
  if(a.startsWith("org")&&!canManageOrganization())return;
+ if(a.startsWith("user")&&!canManageUsers())return;
  if(a==="category-create")return createAddCategory(b.dataset.entity);
  if(a==="category-cancel"){
   document.querySelectorAll("[data-add-category-panel]").forEach(panel=>{panel.hidden=true});
@@ -666,6 +712,10 @@ document.addEventListener("click",e=>{
  else if(a==="accountopen"){S.accountModal=true;S.accountDone=false;S.accountMsg=""}
  else if(a==="accountcancel"){S.accountModal=false;S.accountDone=false;S.accountMsg=""}
  else if(a==="settings-open"){S.settings=true}
+ else if(a==="useropen"){openUserModal()}
+ else if(a==="userclose"){S.userModal=false;S.userDraft=null;S.userMsg=""}
+ else if(a==="usercreate")return createUser();
+ else if(a==="settings-addtrainee"){openAddTrainee()}
  else if(a==="settings-close"){S.settings=false}
  else if(a==="permissions-open"){S.settings=false;S.permissions=true;S.permissionDraft=copyPermissions(ROLE_PERMS);S.permissionMsg=""}
  else if(a==="permissions-close"){S.permissions=false;S.permissionDraft=null;S.permissionMsg=""}
@@ -1011,7 +1061,7 @@ document.addEventListener("keydown",e=>{
   if(profileMenu&&profileMenu.open){profileMenu.open=false;profileMenu.querySelector("summary").focus();return}
  }
  if((e.key==="Enter"||e.key===" ")&&e.target.classList&&e.target.classList.contains("hy-t")){e.preventDefault();e.target.click();return}
- if(e.key==="Escape"&&(S.modal!=null||S.edit||S.add||S.upload||S.video||S.map||S.settings||S.organization||S.permissions)){stopVideoPlayer();stopVideoPlayer("map-player");S.modal=null;S.edit=false;S.add=false;S.addDraft=null;S.upload=false;S.video=false;S.map=false;S.settings=false;S.organization=false;S.permissions=false;S.permissionDraft=null;S.mplay="";render()}
+ if(e.key==="Escape"&&(S.modal!=null||S.edit||S.add||S.upload||S.video||S.map||S.settings||S.userModal||S.organization||S.permissions)){stopVideoPlayer();stopVideoPlayer("map-player");S.modal=null;S.edit=false;S.add=false;S.addDraft=null;S.upload=false;S.video=false;S.map=false;S.settings=false;S.userModal=false;S.userDraft=null;S.organization=false;S.permissions=false;S.permissionDraft=null;S.mplay="";render()}
  else if(e.key==="Enter"&&S.add&&e.target.id.startsWith("add-category-name-")){const entity=e.target.id.slice("add-category-name-".length),b=document.querySelector(`[data-a="category-create"][data-entity="${entity}"]`);if(b)b.click()}
  else if(e.key==="Enter"&&S.add&&e.target.tagName==="INPUT"){const b=document.querySelector('[data-a="add"]');if(b)b.click()}
  else if(e.key==="Enter"&&e.target.id==="en-nm"){const b=document.querySelector('[data-a="esave"]');if(b)b.click()}

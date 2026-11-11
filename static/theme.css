@@ -78,7 +78,6 @@ button.p:hover{filter:brightness(1.08)}
 .business-open{padding:0;border:0;background:transparent;color:var(--tx);text-align:left}
 .business-open b{font-family:var(--serif);font-size:1.125rem;font-weight:600}
 .business-open:hover{background:transparent;box-shadow:none;transform:none}
-.business-add{margin-top:.75rem}
 .bg .bn{font-family:var(--serif);font-size:2.25rem;font-weight:600}
 .bg .bn.zero{color:#9aa6b2}
 .bs{flex-direction:row!important;flex-wrap:wrap;gap:.375rem!important;margin-top:.625rem}

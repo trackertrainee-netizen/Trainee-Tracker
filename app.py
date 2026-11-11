@@ -12,7 +12,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from dotenv import load_dotenv
 from flask import Flask, Response, g, jsonify, make_response, request
 from postgrest.exceptions import APIError
-from supabase import AuthApiError
+from supabase import AuthApiError, create_client
 from storage3.exceptions import StorageException
 
 from DATA_BASE.db import DataBase, trainee_auth_email
@@ -485,6 +485,88 @@ def create_organization_record():
         app.logger.error("Supabase created no organization record for entity %s", body.get("entity"))
         return jsonify(error="The organization record was not returned after creation."), 502
     return jsonify(record=records[0]), 201
+
+
+USER_ROLES = ("developer", "business", "business_view")
+
+
+@app.post("/api/users")
+def create_user_account():
+    """Create a sign-in account (Supabase Auth user + profile) for staff roles."""
+    denied = _require_org_manager()
+    if denied:
+        return denied
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify(error="Invalid user details."), 400
+
+    username = " ".join(str(body.get("username") or "").split())
+    password = str(body.get("password") or "")
+    role = str(body.get("role") or "")
+    business_id = body.get("business_id") or None
+    if not username or "@" in username or username.casefold() == "developer":
+        return jsonify(error="Enter a valid username (no @, and not \"developer\")."), 400
+    if len(password) < 6:
+        return jsonify(error="Password must be at least 6 characters."), 400
+    if role not in USER_ROLES:
+        return jsonify(error="Choose a valid role."), 400
+
+    if _is_developer():
+        if role != "developer" and not business_id:
+            return jsonify(error="Choose a business for this user."), 400
+        if role == "developer":
+            business_id = None
+    else:
+        # Business accounts can only add Business / Business viewer users in their own business.
+        if role == "developer":
+            return jsonify(error="Only a developer can create developer accounts."), 403
+        business_id = g.profile.get("business_id")
+        if not business_id:
+            return jsonify(error="Your account has no business scope."), 403
+
+    service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+    if not service_key:
+        return jsonify(error="SUPABASE_SERVICE_ROLE_KEY is not configured on the server."), 503
+    try:
+        if business_id:
+            business = (
+                g.database.client.table("businesses")
+                .select("id,name")
+                .eq("id", business_id)
+                .maybe_single()
+                .execute()
+                .data
+            )
+            if not business:
+                return jsonify(error="Choose an existing business."), 400
+        admin = create_client(os.environ.get("SUPABASE_URL"), service_key)
+        auth_user = admin.auth.admin.create_user({
+            "email": trainee_auth_email(username),
+            "password": password,
+            "email_confirm": True,
+            "user_metadata": {"username": username, "full_name": username},
+        })
+        profile = {
+            "id": auth_user.user.id,
+            "full_name": username,
+            "role": role,
+            "business_id": business_id,
+        }
+        try:
+            admin.table("profiles").upsert(profile).execute()
+        except Exception:
+            admin.auth.admin.delete_user(auth_user.user.id)
+            raise
+    except AuthApiError as exc:
+        app.logger.warning("Could not create user in Supabase Auth: %s", exc)
+        message = str(getattr(exc, "message", exc)).lower()
+        if "already" in message or "registered" in message or "exists" in message:
+            return jsonify(error="That username is already taken."), 409
+        return jsonify(error="Could not create the user account."), 502
+    except APIError:
+        app.logger.exception("Could not create the user profile")
+        return jsonify(error="Could not create the user profile."), 502
+    return jsonify(ok=True, username=username, role=role), 201
 
 
 @app.get("/api/trainees")
