@@ -312,15 +312,16 @@ function render(){
 }
 // ---- Left sidebar (dashboard layout)
 function topbar(){
+ const showSearch=!(S.nav==="dashboard"&&!S.sel&&S.view==="overview");
  const name=S.user.full_name||roleLabel(),initial=String(name).trim().slice(0,1).toUpperCase();
- return `<header class="topbar"><label class="top-search"><span aria-hidden="true">⌕</span><input id="q" type="search" value="${esc(S.q||"")}" placeholder="Search trainees, departments, designations…" aria-label="Search trainees" autocomplete="off"></label><div class="top-actions"><button type="button" class="bell" aria-label="Notifications" title="Notifications"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 8 3 8H3s3-1 3-8"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg></button><details class="profile-menu"><summary class="top-profile"><span class="avatar">${esc(initial||"U")}</span><div><b>${esc(name)}</b><span>${esc(roleLabel())}</span></div><span class="profile-caret" aria-hidden="true">⌄</span></summary><div class="profile-dropdown">${canAddTrainee()?'<button type="button" data-a="addopen"><span>Add trainee</span></button>':""}${allow("csv")?'<button type="button" data-a="csv"><span>Export CSV</span></button>':""}<button type="button" data-a="theme"><span>Toggle theme</span></button><button type="button" data-a="logout"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17l5-5-5-5M15 12H3"/><path d="M12 3h7a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-7"/></svg><span>Logout</span></button></div></details></div></header>`;
+ return `<header class="topbar">${showSearch?`<label class="top-search"><span aria-hidden="true">⌕</span><input id="q" type="search" value="${esc(S.q||"")}" placeholder="Search trainees, departments, designations…" aria-label="Search trainees" autocomplete="off"></label>`:""}<div class="top-actions"><button type="button" class="bell" aria-label="Notifications" title="Notifications"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 8 3 8H3s3-1 3-8"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg></button><details class="profile-menu"><summary class="top-profile"><span class="avatar">${esc(initial||"U")}</span><div><b>${esc(name)}</b><span>${esc(roleLabel())}</span></div><span class="profile-caret" aria-hidden="true">⌄</span></summary><div class="profile-dropdown">${canAddTrainee()?'<button type="button" data-a="addopen"><span>Add trainee</span></button>':""}${allow("csv")?'<button type="button" data-a="csv"><span>Export CSV</span></button>':""}<button type="button" data-a="theme"><span>Toggle theme</span></button><button type="button" data-a="logout"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17l5-5-5-5M15 12H3"/><path d="M12 3h7a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-7"/></svg><span>Logout</span></button></div></details></div></header>`;
 }
 function side(t){
  const brand=`<div class="bk"><div class="lg">M</div><div><div class="brand">Magnus</div><div class="mu">Trainee Tracker</div></div></div>`;
  const navButton=(key,icon,label)=>`<button type="button" class="nav-link${S.nav===key?" active":""}" data-a="nav-${key}"><span class="nav-ico" aria-hidden="true">${icon}</span><span>${label}</span></button>`;
  const mediaButton=(permission,action,icon,label)=>allow(permission)?`<button type="button" class="nav-link" data-a="${action}"><span class="nav-ico" aria-hidden="true">${icon}</span><span>${label}</span></button>`:"";
  const detailTools=t?`<div class="side-section"><div class="side-label">Trainee</div>${S.user.role==="trainee"?"":'<button type="button" class="nav-link" data-a="back"><span class="nav-ico" aria-hidden="true">‹</span><span>All trainees</span></button>'}${allow("ename")?'<button type="button" class="nav-link" data-a="ename"><span class="nav-ico" aria-hidden="true">✎</span><span>Edit name</span></button>':""}${canAddTrainee()?'<button type="button" class="nav-link" data-a="accountopen"><span class="nav-ico" aria-hidden="true">🔑</span><span>Set login password</span></button>':""}${allow("del")?`<button type="button" class="nav-link danger-link" data-a="del" data-id="${t.id}"><span class="nav-ico" aria-hidden="true">×</span><span>Remove trainee</span></button>`:""}</div>`:"";
- return `<aside class="sb">${brand}<nav class="side-nav" aria-label="Main navigation"><div class="side-section"><div class="side-label">Navigation</div>${navButton("dashboard","▦","Dashboard")}${navButton("trainees","♙","Trainees")}${S.user.role==="trainee"?"":navButton("businesses","▣","Businesses")}<button type="button" class="nav-link${S.settings?" active":""}" data-a="settings-open"><span class="nav-ico" aria-hidden="true">⚙</span><span>Settings</span></button></div>${detailTools}<div class="side-section"><div class="side-label">Media</div>${mediaButton("upload","uploadopen","↑","Upload video")}${mediaButton("watch","videoopen","▷","Watch video")}${mediaButton("map","mapopen","↗","Map videos")}</div></nav><div class="sidebar-bottom"><div class="side-foot"><div class="side-brand"><span>DATA ANALYST TEAM</span><b>MAGNUS</b></div></div></div></aside>`;
+ return `<aside class="sb">${brand}<nav class="side-nav" aria-label="Main navigation"><div class="side-section"><div class="side-label">Navigation</div>${navButton("dashboard","▦","Dashboard")}${S.user.role==="trainee"?"":navButton("businesses","▣","Businesses")}<button type="button" class="nav-link${S.settings?" active":""}" data-a="settings-open"><span class="nav-ico" aria-hidden="true">⚙</span><span>Settings</span></button></div>${detailTools}<div class="side-section"><div class="side-label">Media</div>${mediaButton("upload","uploadopen","↑","Upload video")}${mediaButton("watch","videoopen","▷","Watch video")}${mediaButton("map","mapopen","↗","Map videos")}</div></nav><div class="sidebar-bottom"><div class="side-foot"><div class="side-brand"><span>DATA ANALYST TEAM</span><b>MAGNUS</b></div></div></div></aside>`;
 }
 // ---- Trainee cards, filtered by the search box (name, department, designation, branch)
 const filtered=()=>{const q=(S.q||"").trim().toLowerCase();return scoped().filter(t=>(S.view==="overview"||biz(t)===S.view)&&[t.name,t.dept,t.desg,t.branch,biz(t)].some(v=>String(v||"").toLowerCase().includes(q)))};
@@ -609,6 +610,7 @@ const nav=`<div class="navbar"><button class="gh" data-a="prev" ${vm<=0?"disable
 
 // ---- Actions
 document.addEventListener("click",e=>{
+ S.cx=e.clientX;S.cy=e.clientY;
  const profileMenu=document.querySelector(".profile-menu");
  if(profileMenu&&!profileMenu.contains(e.target))profileMenu.open=false;
  const b=e.target.closest("[data-a]");if(!b)return;const a=b.dataset.a,t=S.t.find(x=>x.id===S.sel);
@@ -1079,6 +1081,25 @@ const curTheme=()=>document.documentElement.dataset.theme||(matchMedia("(prefers
 const SUN='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
 const MOON='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>';
 function tbtn(){const d=curTheme()==="dark",l=d?"Switch to light theme":"Switch to dark theme";return `<button class="tt" type="button" data-a="theme" title="${l}" aria-label="${l}">${d?SUN:MOON}</button>`}
-function toggleTheme(){const n=curTheme()==="dark"?"light":"dark";const h=document.documentElement;h.classList.add("tx");setTimeout(()=>h.classList.remove("tx"),500);
- h.dataset.theme=n;try{localStorage.setItem("theme",n)}catch(e){}render();
+function toggleTheme(){
+ const n=curTheme()==="dark"?"light":"dark",h=document.documentElement;
+ const apply=()=>{h.dataset.theme=n;try{localStorage.setItem("theme",n)}catch(e){}render()};
+ const calm=matchMedia("(prefers-reduced-motion: reduce)").matches;
+ if(document.startViewTransition&&!calm){
+  // Circle grows from the spot you clicked and paints the new theme (like the reference video)
+  const x=S.cx==null?innerWidth-40:S.cx,y=S.cy==null?40:S.cy;
+  const r=Math.hypot(Math.max(x,innerWidth-x),Math.max(y,innerHeight-y));
+  const vt=document.startViewTransition(apply);
+  vt.ready.then(()=>h.animate({clipPath:[`circle(0px at ${x}px ${y}px)`,`circle(${r}px at ${x}px ${y}px)`]},{duration:800,easing:"cubic-bezier(.65,0,.25,1)",pseudoElement:"::view-transition-new(root)"})).catch(()=>{});
+  return;
+ }
+ h.classList.add("tx");setTimeout(()=>h.classList.remove("tx"),500);
+ apply();
  document.querySelectorAll(".tt svg").forEach(v=>v.classList.add("spin"))}
+
+// Soft light that follows the pointer on glass cards (CSS reads --mx / --my)
+document.addEventListener("pointermove",e=>{
+ const t=e.target.closest&&e.target.closest(".item,.tg>.tl,.bg .card,.settings-action");
+ if(!t)return;const r=t.getBoundingClientRect();
+ t.style.setProperty("--mx",(e.clientX-r.left)+"px");t.style.setProperty("--my",(e.clientY-r.top)+"px");
+},{passive:true});

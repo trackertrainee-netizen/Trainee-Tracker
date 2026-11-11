@@ -110,6 +110,257 @@ th{color:#5d6b79}
 :root[data-theme="dark"] .nav-link.active{background:rgba(255,255,255,.08)}
 :root[data-theme="dark"] button.p{background:#EEEBDA;color:#0D2818}
 :root[data-theme="dark"] .bs span{background:rgba(255,255,255,.06);border-color:var(--bd);color:var(--tx)}
+:root[data-theme="dark"] input,:root[data-theme="dark"] select,:root[data-theme="dark"] textarea,:root[data-theme="dark"] .vw select{background:rgba(255,255,255,.05);color:var(--tx);border-color:var(--bd2)}
+:root[data-theme="dark"] .top-search input{background:transparent}
+:root[data-theme="dark"] .tg>.tl{border-color:var(--bd)}
+:root[data-theme="dark"] .avatar{border-color:rgba(255,255,255,.25)}
+
+/* Same dark look when the OS is dark and no theme was chosen */
+@media (prefers-color-scheme:dark){
+:root:not([data-theme="light"]){--bg:#08150e;--card:rgba(22,58,42,.42);--tx:#EEEBDA;--mu:#a3bcae;--bd:rgba(52,176,112,.26);--bd2:rgba(52,176,112,.42);--gold:#8fe0b8;--gold2:#b5f0d2;--on-gold:#0D2818}
+:root:not([data-theme="light"]) body{background:radial-gradient(75rem 43.75rem at 70% -10%,#0f2e1f 0%,#08150e 60%) fixed,#08150e}
+:root:not([data-theme="light"]) .sb{background:rgba(22,58,42,.55);border-color:var(--bd)!important}
+:root:not([data-theme="light"]) .card,:root:not([data-theme="light"]) .tg>.tl,:root:not([data-theme="light"]) .top-search,:root:not([data-theme="light"]) .mb,:root:not([data-theme="light"]) button{background:var(--card);color:var(--tx)}
+:root:not([data-theme="light"]) .tl b,:root:not([data-theme="light"]) .nav-link,:root:not([data-theme="light"]) .nav-ico,:root:not([data-theme="light"]) .bell,:root:not([data-theme="light"]) .brand{color:var(--tx)}
+:root:not([data-theme="light"]) .nav-link.active{background:rgba(255,255,255,.08)}
+:root:not([data-theme="light"]) button.p{background:#EEEBDA;color:#0D2818}
+:root:not([data-theme="light"]) .bs span{background:rgba(255,255,255,.06);border-color:var(--bd);color:var(--tx)}
+:root:not([data-theme="light"]) input,:root:not([data-theme="light"]) select,:root:not([data-theme="light"]) textarea,:root:not([data-theme="light"]) .vw select{background:rgba(255,255,255,.05);color:var(--tx);border-color:var(--bd2)}
+:root:not([data-theme="light"]) .top-search input{background:transparent}
+:root:not([data-theme="light"]) .tg>.tl{border-color:var(--bd)}
+:root:not([data-theme="light"]) .avatar{border-color:rgba(255,255,255,.25)}
+}
+
 
 /* Tiles fill the row whether the app shows 3 or 4 of them */
 @media (min-width:1024px){.tg{grid-template-columns:repeat(auto-fit,minmax(11rem,1fr))}}
+
+/* Dashboard has no search bar: keep the profile menu on the right */
+.top-actions{margin-left:auto}
+
+/* dark: readable secondary text, flat nav buttons */
+:root[data-theme="dark"] .ph .mu,.tl .mu,.side-label,.nav-ico{color:var(--mu)}
+:root[data-theme="dark"] .nav-link{background:transparent}
+:root[data-theme="dark"] .nav-link.active{background:rgba(255,255,255,.1)}
+:root[data-theme="dark"] .side-brand span,.side-brand b{color:#6f8a7a}
+@media (prefers-color-scheme:dark){
+:root:not([data-theme="light"]) .ph .mu,.tl .mu,.side-label,.nav-ico{color:var(--mu)}
+:root:not([data-theme="light"]) .nav-link{background:transparent}
+:root:not([data-theme="light"]) .nav-link.active{background:rgba(255,255,255,.1)}
+:root:not([data-theme="light"]) .side-brand span,.side-brand b{color:#6f8a7a}
+}
+
+
+/* ---- Motion from the reference video ---------------------------------
+   1. Page change: the page fades up, then its cards blur-in one by one.
+   2. Theme switch: a circle grows from the clicked spot (View Transitions). */
+@keyframes blurin{from{opacity:0;filter:blur(12px);transform:translateY(16px) scale(.985)}to{opacity:1;filter:blur(0);transform:none}}
+@keyframes softfade{from{opacity:0;filter:blur(6px)}to{opacity:1;filter:blur(0)}}
+.an .mn>*{animation:softfade .55s cubic-bezier(.2,.7,.2,1) both}
+.an .mn>*:nth-child(2){animation-delay:.05s}.an .mn>*:nth-child(3){animation-delay:.1s}.an .mn>*:nth-child(n+4){animation-delay:.15s}
+.an .tg>.tl,.an .bg>.card,.an .gl>.card,.an .hyi,.an .hy-t,.an .wt-item,.an .dg>div{animation:blurin .7s cubic-bezier(.2,.7,.2,1) both;animation-delay:.2s}
+.an .tg>.tl:nth-child(2),.an .bg>.card:nth-child(2),.an .gl>.card:nth-child(2),.an .hyi:nth-child(2),.an .hy-t:nth-child(2),.an .wt-item:nth-child(2),.an .dg>div:nth-child(2){animation-delay:0.27s}
+.an .tg>.tl:nth-child(3),.an .bg>.card:nth-child(3),.an .gl>.card:nth-child(3),.an .hyi:nth-child(3),.an .hy-t:nth-child(3),.an .wt-item:nth-child(3),.an .dg>div:nth-child(3){animation-delay:0.34s}
+.an .tg>.tl:nth-child(4),.an .bg>.card:nth-child(4),.an .gl>.card:nth-child(4),.an .hyi:nth-child(4),.an .hy-t:nth-child(4),.an .wt-item:nth-child(4),.an .dg>div:nth-child(4){animation-delay:0.41s}
+.an .tg>.tl:nth-child(5),.an .bg>.card:nth-child(5),.an .gl>.card:nth-child(5),.an .hyi:nth-child(5),.an .hy-t:nth-child(5),.an .wt-item:nth-child(5),.an .dg>div:nth-child(5){animation-delay:0.48s}
+.an .tg>.tl:nth-child(6),.an .bg>.card:nth-child(6),.an .gl>.card:nth-child(6),.an .hyi:nth-child(6),.an .hy-t:nth-child(6),.an .wt-item:nth-child(6),.an .dg>div:nth-child(6){animation-delay:0.55s}
+.an .tg>.tl:nth-child(7),.an .bg>.card:nth-child(7),.an .gl>.card:nth-child(7),.an .hyi:nth-child(7),.an .hy-t:nth-child(7),.an .wt-item:nth-child(7),.an .dg>div:nth-child(7){animation-delay:0.62s}
+.an .tg>.tl:nth-child(8),.an .bg>.card:nth-child(8),.an .gl>.card:nth-child(8),.an .hyi:nth-child(8),.an .hy-t:nth-child(8),.an .wt-item:nth-child(8),.an .dg>div:nth-child(8){animation-delay:0.69s}
+.an .tg>.tl:nth-child(9),.an .bg>.card:nth-child(9),.an .gl>.card:nth-child(9),.an .hyi:nth-child(9),.an .hy-t:nth-child(9),.an .wt-item:nth-child(9),.an .dg>div:nth-child(9){animation-delay:0.76s}
+.an .tg>.tl:nth-child(10),.an .bg>.card:nth-child(10),.an .gl>.card:nth-child(10),.an .hyi:nth-child(10),.an .hy-t:nth-child(10),.an .wt-item:nth-child(10),.an .dg>div:nth-child(10){animation-delay:0.83s}
+.an .tg>.tl:nth-child(11),.an .bg>.card:nth-child(11),.an .gl>.card:nth-child(11),.an .hyi:nth-child(11),.an .hy-t:nth-child(11),.an .wt-item:nth-child(11),.an .dg>div:nth-child(11){animation-delay:0.90s}
+.an .tg>.tl:nth-child(12),.an .bg>.card:nth-child(12),.an .gl>.card:nth-child(12),.an .hyi:nth-child(12),.an .hy-t:nth-child(12),.an .wt-item:nth-child(12),.an .dg>div:nth-child(12){animation-delay:0.97s}
+.an .tg>.tl:nth-child(n+13),.an .bg>.card:nth-child(n+13),.an .gl>.card:nth-child(n+13),.an .hyi:nth-child(n+13),.an .hy-t:nth-child(n+13),.an .wt-item:nth-child(n+13),.an .dg>div:nth-child(n+13){animation-delay:1.05s}
+.an .sc tr{animation:softfade .5s ease both;animation-delay:.3s}
+.an .sc tr:nth-child(n+2){animation-delay:.38s}.an .sc tr:nth-child(n+4){animation-delay:.46s}.an .sc tr:nth-child(n+7){animation-delay:.54s}
+.an .seg b{animation-delay:.45s}
+.an .sb{animation:softfade .5s ease both}
+/* sidebar highlight glides instead of snapping */
+.nav-link{transition:background .25s ease,box-shadow .25s ease,color .2s ease,transform .2s ease}
+.nav-link:hover{transform:translateX(3px)}
+.nav-link:active{transform:scale(.98)}
+
+/* circular theme reveal */
+::view-transition-old(root),::view-transition-new(root){animation:none;mix-blend-mode:normal}
+::view-transition-old(root){z-index:1}
+::view-transition-new(root){z-index:2}
+
+
+/* =====================================================================
+   Glassmorphism + smooth hover motion
+   ===================================================================== */
+:root{--glass:rgba(255,255,255,.5);--glass-2:rgba(255,255,255,.4);--glass-bd:rgba(255,255,255,.8);
+ --glass-hi:inset 0 1px 0 rgba(255,255,255,.95),inset 0 0 0 1px rgba(255,255,255,.25);
+ --glass-sh:0 1px 2px rgba(22,40,58,.04),0 14px 34px -16px rgba(22,40,58,.28);
+ --glass-sh-hover:0 2px 4px rgba(22,40,58,.05),0 26px 48px -18px rgba(20,81,63,.4);
+ --spot:rgba(255,255,255,.9);--spring:cubic-bezier(.34,1.56,.64,1);--ease:cubic-bezier(.22,.8,.3,1)}
+
+/* soft colour blobs behind the glass so the blur has something to refract */
+body::before{content:"";position:fixed;inset:-10%;z-index:-1;pointer-events:none;
+ background:radial-gradient(38rem 30rem at 88% 6%,rgba(46,170,130,.42),transparent 62%),
+  radial-gradient(34rem 28rem at 6% 90%,rgba(64,118,222,.34),transparent 62%),
+  radial-gradient(28rem 22rem at 52% 56%,rgba(214,168,72,.22),transparent 62%);
+ animation:drift 26s ease-in-out infinite alternate}
+@keyframes drift{from{transform:translate3d(0,0,0) scale(1)}to{transform:translate3d(-2.5%,2%,0) scale(1.08)}}
+
+/* glass surfaces */
+.sb,.card:not(.cur),.tg>.tl,.top-search,.mb,.profile-dropdown,.vw select,.settings-action,.hy-up,.pdf-box{
+ background-color:var(--glass);-webkit-backdrop-filter:blur(18px) saturate(170%);backdrop-filter:blur(18px) saturate(170%);
+ border:1px solid var(--glass-bd);box-shadow:var(--glass-hi),var(--glass-sh)}
+.sb{background-color:rgba(255,255,255,.45);backdrop-filter:blur(22px) saturate(180%);-webkit-backdrop-filter:blur(22px) saturate(180%)}
+.mb{background-color:rgba(255,255,255,.72);backdrop-filter:blur(26px) saturate(180%);-webkit-backdrop-filter:blur(26px) saturate(180%)}
+.ov .bd{background:rgba(14,28,40,.35);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.card .tg>.tl,.wt-entry,.hy-t{background-color:var(--glass-2);backdrop-filter:none;-webkit-backdrop-filter:none;box-shadow:var(--glass-hi);border-color:rgba(255,255,255,.7)}
+.card .tg>.tl{border:1px solid rgba(255,255,255,.7)}
+button:not(.p):not(.gh):not(.nav-link):not(.pw-toggle):not(.bell):not(.tt):not(.pill){background-color:rgba(255,255,255,.6);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-shadow:var(--glass-hi)}
+.nav-link,.pw-toggle,.bell,.profile-dropdown button,button.gh{backdrop-filter:none;-webkit-backdrop-filter:none;box-shadow:none}
+input,select,textarea{background-color:rgba(255,255,255,.62)}
+.top-search input{background:transparent}
+.nav-link.active{background:rgba(255,255,255,.85);box-shadow:var(--glass-hi),0 8px 18px -10px rgba(22,40,58,.35)}
+
+/* smooth motion on every interactive surface */
+.item,.tg>.tl,.bg .card,.hy-t,.settings-action,.wt-entry{
+ transition:transform .5s var(--spring),box-shadow .4s var(--ease),border-color .3s var(--ease),background-color .3s var(--ease)}
+button,.pill,.hy-up,.pdf-replace,.chip{transition:transform .35s var(--spring),box-shadow .3s var(--ease),background-color .25s var(--ease),border-color .25s var(--ease),filter .25s var(--ease)}
+.top-search{transition:box-shadow .3s var(--ease),border-color .3s var(--ease),background-color .3s var(--ease)}
+.top-search:focus-within{background-color:rgba(255,255,255,.85)}
+
+/* hover: lift + glow + a soft light that follows the cursor (--mx/--my set in app.js) */
+.item:hover,.tg>.tl:hover,.bg .card:hover,.settings-action:hover{
+ transform:translateY(-5px) scale(1.012);border-color:rgba(20,81,63,.4);box-shadow:var(--glass-hi),var(--glass-sh-hover);
+ background-image:radial-gradient(16rem circle at var(--mx,50%) var(--my,0%),var(--spot),rgba(255,255,255,0) 62%)}
+.card .tg>.tl:hover{transform:translateY(-3px)}
+.hy-t:hover,.wt-entry:hover{transform:translateX(4px);border-color:rgba(20,81,63,.35);box-shadow:var(--glass-hi),0 12px 24px -16px rgba(20,81,63,.45)}
+.hy-t:hover{transform:translateX(4px)}
+.item:active,.bg .card:active{transform:translateY(-2px) scale(.994);transition-duration:.15s}
+button:not(:disabled):hover{transform:translateY(-2px);box-shadow:var(--glass-hi),0 10px 20px -12px rgba(22,40,58,.45)}
+button:not(:disabled):active{transform:translateY(0) scale(.96)}
+button.p:not(:disabled):hover{filter:brightness(1.1);box-shadow:0 14px 26px -12px rgba(20,81,63,.9),inset 0 1px 0 rgba(255,255,255,.3)}
+.nav-link:hover{transform:translateX(4px);background:rgba(255,255,255,.6)}
+.nav-link:hover .nav-ico{transform:scale(1.15)}
+.nav-ico{transition:transform .35s var(--spring),color .2s}
+.bell:hover,.pw-toggle:hover,.profile-dropdown button:hover{transform:none;box-shadow:none}
+.bell:hover{transform:rotate(14deg) scale(1.08)}
+.bell{transition:transform .35s var(--spring),background .2s}
+.top-profile .avatar{transition:transform .4s var(--spring),box-shadow .3s}
+.profile-menu summary:hover .avatar{transform:scale(1.1) rotate(-4deg);box-shadow:0 8px 18px -6px rgba(20,81,63,.6)}
+.profile-dropdown{animation:dropin .28s var(--ease) both;transform-origin:top right}
+@keyframes dropin{from{opacity:0;transform:translateY(-8px) scale(.96)}to{opacity:1;transform:none}}
+tr:not(.mod) td{transition:background-color .25s var(--ease)}
+.seg i{transition:transform .3s var(--spring)}
+.item:hover .seg i{transform:scaleY(1.5)}
+.chip.wt-type{transition:none}
+select option{background:#fff}
+
+/* dark glass */
+:root[data-theme="dark"]{--glass:rgba(22,58,42,.38);--glass-2:rgba(255,255,255,.04);--glass-bd:rgba(120,255,190,.2);
+ --glass-hi:inset 0 1px 0 rgba(255,255,255,.12),inset 0 0 0 1px rgba(120,255,190,.05);
+ --glass-sh:0 1px 2px rgba(0,0,0,.3),0 18px 40px -18px rgba(0,0,0,.75);
+ --glass-sh-hover:0 2px 4px rgba(0,0,0,.35),0 0 28px -8px rgba(60,220,140,.45),0 26px 48px -18px rgba(0,0,0,.8);
+ --spot:rgba(143,224,184,.2)}
+:root[data-theme="dark"] body::before{background:radial-gradient(38rem 30rem at 88% 6%,rgba(40,190,120,.26),transparent 62%),
+  radial-gradient(34rem 28rem at 6% 90%,rgba(30,120,180,.22),transparent 62%),
+  radial-gradient(28rem 22rem at 52% 56%,rgba(120,220,90,.10),transparent 62%)}
+:root[data-theme="dark"] .sb{background-color:rgba(14,40,28,.5)}
+:root[data-theme="dark"] .mb{background-color:rgba(14,40,28,.78)}
+:root[data-theme="dark"] .ov .bd{background:rgba(2,10,6,.55)}
+:root[data-theme="dark"] .card .tg>.tl,:root[data-theme="dark"] .wt-entry,:root[data-theme="dark"] .hy-t{background-color:rgba(255,255,255,.04);border-color:var(--glass-bd)}
+:root[data-theme="dark"] .card:not(.cur),:root[data-theme="dark"] .tg>.tl,:root[data-theme="dark"] .top-search,:root[data-theme="dark"] .profile-dropdown,:root[data-theme="dark"] .vw select,:root[data-theme="dark"] .settings-action,:root[data-theme="dark"] .hy-up,:root[data-theme="dark"] .pdf-box{border-color:var(--glass-bd)}
+:root[data-theme="dark"] button:not(.p):not(.gh):not(.nav-link):not(.pw-toggle):not(.bell):not(.tt):not(.pill){background-color:rgba(255,255,255,.06)}
+:root[data-theme="dark"] input,:root[data-theme="dark"] select,:root[data-theme="dark"] textarea{background-color:rgba(255,255,255,.06)}
+:root[data-theme="dark"] .top-search input{background:transparent}
+:root[data-theme="dark"] .top-search:focus-within{background-color:rgba(22,58,42,.7)}
+:root[data-theme="dark"] .nav-link:hover{background:rgba(255,255,255,.07)}
+:root[data-theme="dark"] .nav-link.active{background:rgba(255,255,255,.12)}
+:root[data-theme="dark"] .item:hover,:root[data-theme="dark"] .tg>.tl:hover,:root[data-theme="dark"] .bg .card:hover{border-color:rgba(120,255,190,.5)}
+:root[data-theme="dark"] .hy-t:hover,:root[data-theme="dark"] .wt-entry:hover{border-color:rgba(120,255,190,.45);box-shadow:var(--glass-hi),0 12px 24px -16px rgba(60,220,140,.5)}
+:root[data-theme="dark"] button:not(:disabled):hover{box-shadow:var(--glass-hi),0 10px 22px -12px rgba(0,0,0,.8)}
+:root[data-theme="dark"] button.p:not(:disabled):hover{box-shadow:0 0 24px -4px rgba(238,235,218,.45)}
+:root[data-theme="dark"] select option{background:#0f2e1f;color:#EEEBDA}
+
+@media (prefers-color-scheme:dark){
+:root:not([data-theme="light"]){--glass:rgba(22,58,42,.38);--glass-2:rgba(255,255,255,.04);--glass-bd:rgba(120,255,190,.2);
+ --glass-hi:inset 0 1px 0 rgba(255,255,255,.12),inset 0 0 0 1px rgba(120,255,190,.05);
+ --glass-sh:0 1px 2px rgba(0,0,0,.3),0 18px 40px -18px rgba(0,0,0,.75);
+ --glass-sh-hover:0 2px 4px rgba(0,0,0,.35),0 0 28px -8px rgba(60,220,140,.45),0 26px 48px -18px rgba(0,0,0,.8);
+ --spot:rgba(143,224,184,.2)}
+:root:not([data-theme="light"]) body::before{background:radial-gradient(38rem 30rem at 88% 6%,rgba(40,190,120,.26),transparent 62%),
+  radial-gradient(34rem 28rem at 6% 90%,rgba(30,120,180,.22),transparent 62%),
+  radial-gradient(28rem 22rem at 52% 56%,rgba(120,220,90,.10),transparent 62%)}
+:root:not([data-theme="light"]) .sb{background-color:rgba(14,40,28,.5)}
+:root:not([data-theme="light"]) .mb{background-color:rgba(14,40,28,.78)}
+:root:not([data-theme="light"]) .ov .bd{background:rgba(2,10,6,.55)}
+:root:not([data-theme="light"]) .card .tg>.tl,:root:not([data-theme="light"]) .wt-entry,:root:not([data-theme="light"]) .hy-t{background-color:rgba(255,255,255,.04);border-color:var(--glass-bd)}
+:root:not([data-theme="light"]) .card:not(.cur),:root:not([data-theme="light"]) .tg>.tl,:root:not([data-theme="light"]) .top-search,:root:not([data-theme="light"]) .profile-dropdown,:root:not([data-theme="light"]) .vw select,:root:not([data-theme="light"]) .settings-action,:root:not([data-theme="light"]) .hy-up,:root:not([data-theme="light"]) .pdf-box{border-color:var(--glass-bd)}
+:root:not([data-theme="light"]) button:not(.p):not(.gh):not(.nav-link):not(.pw-toggle):not(.bell):not(.tt):not(.pill){background-color:rgba(255,255,255,.06)}
+:root:not([data-theme="light"]) input,:root:not([data-theme="light"]) select,:root:not([data-theme="light"]) textarea{background-color:rgba(255,255,255,.06)}
+:root:not([data-theme="light"]) .top-search input{background:transparent}
+:root:not([data-theme="light"]) .top-search:focus-within{background-color:rgba(22,58,42,.7)}
+:root:not([data-theme="light"]) .nav-link:hover{background:rgba(255,255,255,.07)}
+:root:not([data-theme="light"]) .nav-link.active{background:rgba(255,255,255,.12)}
+:root:not([data-theme="light"]) .item:hover,:root:not([data-theme="light"]) .tg>.tl:hover,:root:not([data-theme="light"]) .bg .card:hover{border-color:rgba(120,255,190,.5)}
+:root:not([data-theme="light"]) .hy-t:hover,:root:not([data-theme="light"]) .wt-entry:hover{border-color:rgba(120,255,190,.45);box-shadow:var(--glass-hi),0 12px 24px -16px rgba(60,220,140,.5)}
+:root:not([data-theme="light"]) button:not(:disabled):hover{box-shadow:var(--glass-hi),0 10px 22px -12px rgba(0,0,0,.8)}
+:root:not([data-theme="light"]) button.p:not(:disabled):hover{box-shadow:0 0 24px -4px rgba(238,235,218,.45)}
+:root:not([data-theme="light"]) select option{background:#0f2e1f;color:#EEEBDA}
+
+}
+
+
+/* =====================================================================
+   DARK THEME: Graphite & Aqua (final dark palette, overrides earlier dark rules)
+   ===================================================================== */
+/* dark palette: Graphite & Aqua */
+:root[data-theme="dark"]{--bg:#0b0f12;--card:rgba(30,40,46,.42);--tx:#E9F1F2;--mu:#9fb0b4;--bd:rgba(110,230,215,.22);--bd2:rgba(110,230,215,.4);
+ --gold:#4fe0cf;--gold2:#8ff0e4;--on-gold:#0b0f12;--ink:#0f2a2e;--navy:#14474d;--pn:#8ff0e4;--pn-on:#0b0f12;--hi:rgba(79,224,207,.08);
+ --glass:rgba(30,40,46,.38);--glass-bd:rgba(110,230,215,.2);--spot:rgba(79,224,207,.2);
+ --glass-sh-hover:0 2px 4px rgba(0,0,0,.35),0 0 28px -8px rgba(79,224,207,.45),0 26px 48px -18px rgba(0,0,0,.8)}
+:root[data-theme="dark"] body{background:radial-gradient(75rem 43.75rem at 70% -10%,#123238 0%,#0b0f12 60%) fixed,#0b0f12}
+:root[data-theme="dark"] body::before{background:radial-gradient(38rem 30rem at 88% 6%,rgba(40,200,190,.28),transparent 62%),radial-gradient(34rem 28rem at 6% 90%,rgba(50,120,200,.22),transparent 62%),radial-gradient(28rem 22rem at 52% 56%,rgba(120,220,150,.10),transparent 62%)}
+:root[data-theme="dark"] .sb{background-color:rgba(30,40,46,.45);border-color:var(--glass-bd)!important}
+:root[data-theme="dark"] .mb{background-color:rgba(30,40,46,.85)}
+:root[data-theme="dark"] .ov .bd{background:rgba(0,0,0,.55)}
+:root[data-theme="dark"] .lg{background:rgba(30,40,46,.7);border:1px solid var(--bd2);color:#8ff0e4}
+:root[data-theme="dark"] .seg b{background:linear-gradient(90deg,#1fb8a8,#4fe0cf,#a8f6ee,#4fe0cf,#1fb8a8);background-size:200% 100%}
+:root[data-theme="dark"] button.p{background:linear-gradient(180deg,#8ff0e4,#4fe0cf);color:#0b0f12}
+:root[data-theme="dark"] .pill.on{background:linear-gradient(180deg,#8ff0e4,#4fe0cf);color:#0b0f12}
+:root[data-theme="dark"] .item:hover,:root[data-theme="dark"] .tg>.tl:hover,:root[data-theme="dark"] .bg .card:hover{border-color:rgba(110,230,215,.55)}
+:root[data-theme="dark"] .hy-t:hover,:root[data-theme="dark"] .wt-entry:hover{border-color:rgba(110,230,215,.5);box-shadow:var(--glass-hi),0 12px 24px -16px rgba(79,224,207,.5)}
+:root[data-theme="dark"] .nav-link.active .nav-ico,:root[data-theme="dark"] .nav-link.active{color:#8ff0e4}
+:root[data-theme="dark"] .top-search:focus-within{background-color:rgba(30,40,46,.7);border-color:#4fe0cf;box-shadow:0 0 0 3px rgba(79,224,207,.2)}
+:root[data-theme="dark"] select option{background:#0b0f12;color:#E9F1F2}
+:root[data-theme="dark"] .avatar{background:linear-gradient(145deg,rgba(30,40,46,.9),#14474d);color:#8ff0e4}
+:root[data-theme="dark"] .chip.wt-type,:root[data-theme="dark"] .bs span{color:#E9F1F2}
+
+:root[data-theme="dark"] .tl{box-shadow:var(--glass-hi),var(--glass-sh)}
+:root[data-theme="dark"] .card .tl,:root[data-theme="dark"] .card .tg>.tl{box-shadow:var(--glass-hi)}
+:root[data-theme="dark"] .item:hover,:root[data-theme="dark"] .tg>.tl:hover,:root[data-theme="dark"] .bg .card:hover{box-shadow:var(--glass-hi),var(--glass-sh-hover)}
+
+@media (prefers-color-scheme:dark){
+/* dark palette: Graphite & Aqua */
+:root:not([data-theme="light"]){--bg:#0b0f12;--card:rgba(30,40,46,.42);--tx:#E9F1F2;--mu:#9fb0b4;--bd:rgba(110,230,215,.22);--bd2:rgba(110,230,215,.4);
+ --gold:#4fe0cf;--gold2:#8ff0e4;--on-gold:#0b0f12;--ink:#0f2a2e;--navy:#14474d;--pn:#8ff0e4;--pn-on:#0b0f12;--hi:rgba(79,224,207,.08);
+ --glass:rgba(30,40,46,.38);--glass-bd:rgba(110,230,215,.2);--spot:rgba(79,224,207,.2);
+ --glass-sh-hover:0 2px 4px rgba(0,0,0,.35),0 0 28px -8px rgba(79,224,207,.45),0 26px 48px -18px rgba(0,0,0,.8)}
+:root:not([data-theme="light"]) body{background:radial-gradient(75rem 43.75rem at 70% -10%,#123238 0%,#0b0f12 60%) fixed,#0b0f12}
+:root:not([data-theme="light"]) body::before{background:radial-gradient(38rem 30rem at 88% 6%,rgba(40,200,190,.28),transparent 62%),radial-gradient(34rem 28rem at 6% 90%,rgba(50,120,200,.22),transparent 62%),radial-gradient(28rem 22rem at 52% 56%,rgba(120,220,150,.10),transparent 62%)}
+:root:not([data-theme="light"]) .sb{background-color:rgba(30,40,46,.45);border-color:var(--glass-bd)!important}
+:root:not([data-theme="light"]) .mb{background-color:rgba(30,40,46,.85)}
+:root:not([data-theme="light"]) .ov .bd{background:rgba(0,0,0,.55)}
+:root:not([data-theme="light"]) .lg{background:rgba(30,40,46,.7);border:1px solid var(--bd2);color:#8ff0e4}
+:root:not([data-theme="light"]) .seg b{background:linear-gradient(90deg,#1fb8a8,#4fe0cf,#a8f6ee,#4fe0cf,#1fb8a8);background-size:200% 100%}
+:root:not([data-theme="light"]) button.p{background:linear-gradient(180deg,#8ff0e4,#4fe0cf);color:#0b0f12}
+:root:not([data-theme="light"]) .pill.on{background:linear-gradient(180deg,#8ff0e4,#4fe0cf);color:#0b0f12}
+:root:not([data-theme="light"]) .item:hover,:root:not([data-theme="light"]) .tg>.tl:hover,:root:not([data-theme="light"]) .bg .card:hover{border-color:rgba(110,230,215,.55)}
+:root:not([data-theme="light"]) .hy-t:hover,:root:not([data-theme="light"]) .wt-entry:hover{border-color:rgba(110,230,215,.5);box-shadow:var(--glass-hi),0 12px 24px -16px rgba(79,224,207,.5)}
+:root:not([data-theme="light"]) .nav-link.active .nav-ico,:root:not([data-theme="light"]) .nav-link.active{color:#8ff0e4}
+:root:not([data-theme="light"]) .top-search:focus-within{background-color:rgba(30,40,46,.7);border-color:#4fe0cf;box-shadow:0 0 0 3px rgba(79,224,207,.2)}
+:root:not([data-theme="light"]) select option{background:#0b0f12;color:#E9F1F2}
+:root:not([data-theme="light"]) .avatar{background:linear-gradient(145deg,rgba(30,40,46,.9),#14474d);color:#8ff0e4}
+:root:not([data-theme="light"]) .chip.wt-type,:root:not([data-theme="light"]) .bs span{color:#E9F1F2}
+
+:root:not([data-theme="light"]) .tl{box-shadow:var(--glass-hi),var(--glass-sh)}
+:root:not([data-theme="light"]) .card .tl,:root:not([data-theme="light"]) .card .tg>.tl{box-shadow:var(--glass-hi)}
+:root:not([data-theme="light"]) .item:hover,:root:not([data-theme="light"]) .tg>.tl:hover,:root:not([data-theme="light"]) .bg .card:hover{box-shadow:var(--glass-hi),var(--glass-sh-hover)}
+
+}
