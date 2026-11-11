@@ -122,6 +122,7 @@ function mapModal(){
 }
 function modal(t){
  if(S.permissions)return permissionsModal();
+ if(S.settings)return settingsModal();
  if(S.organization)return organizationModal();
  if(S.map)return mapModal();
  if(S.upload)return uploadModal();
@@ -151,7 +152,7 @@ const mv=mi=>ST.filter(x=>x.m===mi&&x.t==="VIDEO").reduce((a,x)=>a+x.min,0);
 // ---- State
 const BIZ=BUSINESSES;
 const biz=t=>t.biz||"";
-let S={t:[],sel:null,upload:false,video:false,hls:null,view:"overview",bv:"overview",map:false,organization:false,permissions:false,permissionDraft:null,permissionMsg:"",orgEntity:"business",orgParent:"",orgName:"",orgMsg:"",vmap:{},folders:[],mb:"Magnus",mm:0,mt:null,mf:"",mplay:"",mmsg:"",mfstat:"",himg:{},hmsg:{},user:null,options:{businesses:[],branches:[],departments:[],designations:[]},addBiz:"",addBranch:"",addDept:"",addDesg:"",addmsg:"",loginmsg:""};
+let S={t:[],sel:null,upload:false,video:false,hls:null,view:"overview",bv:"overview",nav:"dashboard",map:false,settings:false,organization:false,permissions:false,permissionDraft:null,permissionMsg:"",orgEntity:"business",orgParent:"",orgName:"",orgMsg:"",vmap:{},folders:[],mb:"Magnus",mm:0,mt:null,mf:"",mplay:"",mmsg:"",mfstat:"",himg:{},hmsg:{},user:null,options:{businesses:[],branches:[],departments:[],designations:[]},addBiz:"",addBranch:"",addDept:"",addDesg:"",addmsg:"",loginmsg:""};
 let activeVideoUpload=null;
 // ---- Supabase Auth-backed roles
 const sameName=(a,b)=>String(a||"").trim().toLowerCase()===String(b||"").trim().toLowerCase();
@@ -191,7 +192,7 @@ const roleLabel=()=>S.user?(ROLE_LABELS[S.user.role]||S.user.role):"";
 const scopeLabel=()=>{const u=S.user;if(!u)return"";if(ALLBIZ(u))return"All businesses";
  if(u.business&&u.business.name)return [u.business.name,u.branch&&u.branch.name,u.department&&u.department.name].filter(Boolean).join(" · ");
  return""};
-const initView=()=>{S.sel=null;S.vm=null;S.q="";S.bv="overview";S.modal=null;S.edit=false;S.add=false;S.upload=false;S.video=false;S.map=false;S.organization=false;S.permissions=false;S.permissionDraft=null;S.view=oneBiz()?vbiz()[0]:"overview"};
+const initView=()=>{S.sel=null;S.vm=null;S.q="";S.bv="overview";S.nav="dashboard";S.modal=null;S.edit=false;S.add=false;S.upload=false;S.video=false;S.map=false;S.settings=false;S.organization=false;S.permissions=false;S.permissionDraft=null;S.view=oneBiz()?vbiz()[0]:"overview"};
 async function login(username,password){
  const response=await fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username,password})});
  const result=await response.json().catch(()=>({}));
@@ -267,7 +268,7 @@ function render(){
  if(!viewChanged)ap.classList.remove("an"); // plain refresh: new elements must not fade/slide in again (that was the blinking)
  // Keep an open pop-up in place and only refresh its contents, so its fade/pop-in never replays (no blinking).
  const tmp=document.createElement("div");
- tmp.innerHTML=`<div class="shell">${side(t)}<main class="mn">${t?detail(t):list()}</main></div>`+modal(t);
+ tmp.innerHTML=`<div class="shell">${side(t)}<main class="mn">${topbar()}${t?detail(t):list()}</main></div>`+modal(t);
  const oldOv=ap.querySelector(":scope > .ov"),newOv=tmp.querySelector(":scope > .ov"),oldMb=oldOv&&oldOv.querySelector(".mb"),newMb=newOv&&newOv.querySelector(".mb");
  if(oldMb&&newMb&&oldOv.getAttribute("aria-labelledby")===newOv.getAttribute("aria-labelledby")){
   const bx=oldMb.scrollTop;
@@ -279,22 +280,17 @@ function render(){
  else if(t&&(S.modal!=null||S.edit)){const i=document.getElementById(S.edit?"en-nm":"ms-sc");if(i){i.focus();if(S.edit)i.select()}}
 }
 // ---- Left sidebar (dashboard layout)
+function topbar(){
+ const name=S.user.full_name||roleLabel(),initial=String(name).trim().slice(0,1).toUpperCase();
+ return `<header class="topbar"><label class="top-search"><span aria-hidden="true">⌕</span><input id="q" type="search" value="${esc(S.q||"")}" placeholder="Search trainees, departments, designations…" aria-label="Search trainees" autocomplete="off"></label><div class="top-actions">${allow("csv")?'<button type="button" class="top-secondary" data-a="csv">Export CSV</button>':""}${canAddTrainee()?'<button type="button" class="p" data-a="addopen">＋ Add trainee</button>':""}<button type="button" class="tt" data-a="theme" title="Toggle theme" aria-label="Toggle theme">${curTheme()==="dark"?SUN:MOON}</button><div class="top-profile"><span class="avatar">${esc(initial||"U")}</span><div><b>${esc(name)}</b><span>${esc(roleLabel())}</span></div></div></div></header>`;
+}
 function side(t){
  const brand=`<div class="bk"><div class="lg">M</div><div><div class="brand">Magnus</div><div class="mu">Trainee Tracker</div></div></div>`;
- const foot=`<div class="sf"><span class="mu">Theme</span>${tbtn()}</div>`;
- const permissionButton=S.user.role==="developer"?'<button type="button" class="sm" data-a="permissions-open">Role permissions</button>':"";
- const who=`<div class="who"><div class="who-n">${esc(S.user.full_name||roleLabel())}</div><div class="mu">${esc(roleLabel())}${scopeLabel()?" · "+esc(scopeLabel()):""}</div><div class="who-b">${permissionButton}<button type="button" class="sm" data-a="logout">Sign out</button></div></div>`;
- const B=(p,h)=>allow(p)?h:"";
- const orgButton=canManageOrganization()?'<button data-a="orgopen">Manage organization</button>':"";
- if(!t)return `<aside class="sb">${brand}${who}
-  ${S.user.role==="trainee"?"":`<label class="fl sq"><span>Search</span><input id="q" type="search" value="${esc(S.q||"")}" placeholder="Name, department, designation…" autocomplete="off"></label>`}
-  ${canAddTrainee()?'<button class="p" data-a="addopen">＋ Add trainee</button>':""}${orgButton}${B("upload",'<button data-a="uploadopen">↑ Upload video</button>')}${B("watch",'<button data-a="videoopen">▶ Watch video</button>')}${B("map",'<button data-a="mapopen">🔗 Map videos</button>')}${B("csv",'<button data-a="csv">Export CSV</button>')}
-  <div class="sg"></div>
-  <div class="sd"><span class="mu">Training duration</span><b>${hm(AT)}</b><span class="mu">${ST.length} steps · ${hm(VT)} of video (${VID.length} videos)</span></div>${foot}</aside>`;
- return `<aside class="sb">${brand}${who}
-  ${S.user.role==="trainee"?"":'<button data-a="back">← All trainees</button>'}${orgButton}${B("upload",'<button data-a="uploadopen">↑ Upload video</button>')}${B("watch",'<button data-a="videoopen">▶ Watch video</button>')}${B("map",'<button data-a="mapopen">🔗 Map videos</button>')}${B("ename",'<button data-a="ename">✎ Edit name</button>')}${B("del",`<button class="dgr" data-a="del" data-id="${t.id}">Remove trainee</button>`)}
-  <div class="sg"></div>
-  <div class="sd"><span class="mu">Viewing</span><b>${esc(t.name)}</b></div>${foot}</aside>`;
+ const navButton=(key,icon,label)=>`<button type="button" class="nav-link${S.nav===key?" active":""}" data-a="nav-${key}"><span class="nav-ico" aria-hidden="true">${icon}</span><span>${label}</span></button>`;
+ const mediaButton=(permission,action,icon,label)=>allow(permission)?`<button type="button" class="nav-link" data-a="${action}"><span class="nav-ico" aria-hidden="true">${icon}</span><span>${label}</span></button>`:"";
+ const detailTools=t?`<div class="side-section"><div class="side-label">Trainee</div>${S.user.role==="trainee"?"":'<button type="button" class="nav-link" data-a="back"><span class="nav-ico" aria-hidden="true">‹</span><span>All trainees</span></button>'}${allow("ename")?'<button type="button" class="nav-link" data-a="ename"><span class="nav-ico" aria-hidden="true">✎</span><span>Edit name</span></button>':""}${allow("del")?`<button type="button" class="nav-link danger-link" data-a="del" data-id="${t.id}"><span class="nav-ico" aria-hidden="true">×</span><span>Remove trainee</span></button>`:""}</div>`:"";
+ const who=`<div class="who"><span class="avatar">${esc(String(S.user.full_name||roleLabel()).trim().slice(0,1).toUpperCase()||"U")}</span><div class="who-info"><b>${esc(S.user.full_name||roleLabel())}</b><span>${esc(roleLabel())}${scopeLabel()?" · "+esc(scopeLabel()):""}</span></div><button type="button" class="sm" data-a="logout">Sign out</button></div>`;
+ return `<aside class="sb">${brand}<nav class="side-nav" aria-label="Main navigation"><div class="side-section"><div class="side-label">Navigation</div>${navButton("dashboard","▦","Dashboard")}${navButton("trainees","♙","Trainees")}${S.user.role==="trainee"?"":navButton("businesses","▣","Businesses")}<button type="button" class="nav-link${S.settings?" active":""}" data-a="settings-open"><span class="nav-ico" aria-hidden="true">⚙</span><span>Settings</span></button></div>${detailTools}<div class="side-section"><div class="side-label">Media</div>${mediaButton("upload","uploadopen","↑","Upload video")}${mediaButton("watch","videoopen","▷","Watch video")}${mediaButton("map","mapopen","↗","Map videos")}</div></nav><div class="sidebar-bottom">${who}<div class="side-foot"><span>Training duration</span><b>${hm(AT)}</b><small>${ST.length} steps · ${hm(VT)} video</small>${tbtn()}</div></div></aside>`;
 }
 // ---- Trainee cards, filtered by the search box (name, department, designation, branch)
 const filtered=()=>{const q=(S.q||"").trim().toLowerCase();return scoped().filter(t=>(S.view==="overview"||biz(t)===S.view)&&[t.name,t.dept,t.desg,t.branch,biz(t)].some(v=>String(v||"").toLowerCase().includes(q)))};
@@ -326,7 +322,7 @@ const organizationParents=entity=>{
 };
 function openOrganization(entity,parentId=""){
  if(!canManageOrganization())return;
- S.organization=true;S.orgEntity=entity;S.orgParent=parentId||(organizationParents(entity)[0]||{}).id||"";S.orgName="";S.orgMsg="";render();
+ S.settings=false;S.organization=true;S.orgEntity=entity;S.orgParent=parentId||(organizationParents(entity)[0]||{}).id||"";S.orgName="";S.orgMsg="";render();
 }
 function organizationModal(){
  const labels={business:"Business",branch:"Branch",department:"Department",designation:"Designation"};
@@ -369,6 +365,11 @@ function permissionsModal(){
  const header=roles.map(role=>`<th>${esc(ROLE_LABELS[role]||role)}</th>`).join("");
  const rows=Object.entries(PERM_LABELS).map(([permission,label])=>`<tr><td>${esc(label)}</td>${roles.map(role=>`<td style="text-align:center"><input type="checkbox" class="permission-toggle" data-role="${esc(role)}" data-permission="${esc(permission)}"${draft[role]&&draft[role][permission]?" checked":""}${role==="developer"?" disabled":""} aria-label="${esc(label+" — "+(ROLE_LABELS[role]||role))}"></td>`).join("")}</tr>`).join("");
  return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="permissions-title"><div class="bd" data-a="permissions-close"></div><div class="mb wide acc"><h2 id="permissions-title">Role permissions</h2><div class="mu">Choose which actions are shown for each existing role. Developer permissions stay enabled.</div><div class="sc"><table><tr><th>Permission</th>${header}</tr>${rows}</table></div><div class="mu" role="status">${esc(S.permissionMsg||"")}</div><div class="mu" style="margin-top:8px">These switches control the app interface only; Supabase and API policies still enforce server-side access. Save applies on this browser. Download config.js and deploy it to share the settings with everyone.</div><div class="row" style="margin-top:14px;justify-content:flex-end"><button type="button" data-a="permissions-close">Close</button><button type="button" data-a="permissions-download">Download config.js</button><button type="button" class="p" data-a="permissions-save">Save permissions</button></div></div></div>`;
+}
+function settingsModal(){
+ const organization=canManageOrganization()?'<button type="button" class="settings-action" data-a="orgopen"><span>Manage organization</span><small>Businesses, branches, departments and designations</small></button>':"";
+ const permissions=S.user.role==="developer"?'<button type="button" class="settings-action" data-a="permissions-open"><span>Role permissions</span><small>Choose which actions are shown for each role</small></button>':"";
+ return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="settings-title"><div class="bd" data-a="settings-close"></div><div class="mb settings-modal"><h2 id="settings-title">Settings</h2><div class="mu">Manage your workspace preferences.</div><div class="settings-actions">${organization}${permissions}<button type="button" class="settings-action" data-a="theme"><span>Appearance</span><small>Switch between light and dark theme</small></button></div><div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="settings-close">Close</button></div></div></div>`;
 }
 function savePermissions(){
  if(!S.permissionDraft)return;
@@ -425,7 +426,7 @@ function hierarchy(){
 }
 const bstats=L=>{const aw=L.filter(t=>{const l=cur(t);return l&&l.c}).length,dn=L.filter(t=>status(t)[0]==="Completed").length;return{n:L.length,aw,dn,ip:L.length-aw-dn}};
 function bizCards(){
- return '<h2 class="bh">Businesses</h2><div class="bg">'+vbiz().map(b=>{const k=bstats(scoped().filter(t=>biz(t)===b));return `<div class="card item bz" data-a="openbiz" data-b="${esc(b)}" role="button" tabindex="0">
+ return '<div class="bg">'+vbiz().map(b=>{const k=bstats(scoped().filter(t=>biz(t)===b));return `<div class="card item bz" data-a="openbiz" data-b="${esc(b)}" role="button" tabindex="0">
   <div class="sp"><b>${esc(b)}</b></div>
   <div class="bn">${k.n}</div><div class="mu">${k.n===1?"trainee":"trainees"}</div>
   <div class="bs mu"><span>${k.ip} in progress</span><span>${k.aw} awaiting</span><span>${k.dn} completed</span></div></div>`}).join("")+'</div>';
@@ -467,13 +468,16 @@ async function hierRemove(b){
 }
 function listBody(){
  if(S.bv==="hierarchy")return hierImages();
- return S.view==="overview"&&!(S.q||"").trim()?bizCards():tcards();
+ if(S.view!=="overview"||S.nav==="trainees")return tcards();
+ if(S.nav==="businesses")return (S.q||"").trim()?tcards():bizCards();
+ return (S.q||"").trim()?tcards():'<h2 class="bh">Businesses</h2>'+bizCards();
 }
 function list(){
  const ov=S.view==="overview",k=bstats(ov?scoped():scoped().filter(t=>biz(t)===S.view));
  const st=(l,v,sub)=>`<div class="tl"><span class="mu">${l}</span><b>${v}</b><span class="mu">${sub}</span></div>`;
- const desc=ov?"Overall overview across all businesses. Open a business below to see its trainees and hierarchy.":`Follow every ${esc(S.view)} trainee through ${MODS.length} modules and ${ST.length} tasks, one verified step at a time.`;
- return `${ov||oneBiz()?"":'<button class="bk-btn" data-a="allbiz">← All businesses</button>'}<div class="ph"><h1>${ov?"Trainees":esc(S.view)}</h1><div class="mu">${desc}</div></div>
+ const title=!ov?S.view:S.nav==="businesses"?"Businesses":S.nav==="trainees"?"Trainees":"Dashboard";
+ const desc=!ov?`Follow every ${esc(S.view)} trainee through ${MODS.length} modules and ${ST.length} tasks, one verified step at a time.`:S.nav==="trainees"?"View and search trainees across the businesses in your scope.":S.nav==="businesses"?"Choose a business to view its trainees and hierarchy.":"Overall overview across all businesses. Open a business below to see its trainees and hierarchy.";
+ return `${!ov&&!oneBiz()?'<button class="bk-btn" data-a="allbiz">← All businesses</button>':""}<div class="ph"><h1>${esc(title)}</h1><div class="mu">${desc}</div></div>
  <label class="fl vw"><span>View</span><select id="view">${[["overview","Overview"],["hierarchy","Hierarchy"]].map(([v,n])=>`<option value="${v}"${S.bv===v?" selected":""}>${n}</option>`).join("")}</select></label>
  <div class="tg">${st("Total trainees",k.n,"enrolled")}${st("In progress",k.ip,"working through steps")}${st("Awaiting verification",k.aw,"needs a verifier")}${st("Completed",k.dn,"all steps verified")}</div>
  <div id="tl">${listBody()}</div>`;
@@ -600,8 +604,11 @@ document.addEventListener("click",e=>{
   const d=now(),g=i=>document.getElementById(i).value.trim(),business=g("bz"),department=g("dp"),branch=g("br"),designation=g("ds");
   if(!vbiz().includes(business)||!addDepts().some(x=>sameName(x.name,department))||!addBranches(business).some(x=>sameName(x.name,branch))||!addDesignations().some(x=>sameName(x.title,designation))){S.addmsg="Choose an available business, branch, department, and designation.";render();return}
   S.t.push({id:crypto.randomUUID(),biz:business,name:n,dept:department,branch:branch,desg:designation,join:g("jd"),sal:g("sl"),wage:g("wg"),start:d,logs:[{s:0,a:d}]});S.add=false;S.addmsg=""}
- else if(a==="openbiz"){S.view=b.dataset.b;S.bv="overview";S.q=""}
- else if(a==="allbiz"){S.view="overview";S.bv="overview";S.q=""}
+ else if(a==="nav-dashboard"){S.nav="dashboard";S.view="overview";S.bv="overview";S.q=""}
+ else if(a==="nav-trainees"){S.nav="trainees";S.view="overview";S.bv="overview";S.q=""}
+ else if(a==="nav-businesses"){S.nav="businesses";S.view="overview";S.bv="overview";S.q=""}
+ else if(a==="openbiz"){S.nav="businesses";S.view=b.dataset.b;S.bv="overview";S.q=""}
+ else if(a==="allbiz"){S.nav="businesses";S.view="overview";S.bv="overview";S.q=""}
  else  if(a==="open"){S.sel=b.dataset.id;S.vm=null;S.modal=null;S.edit=false}
  else if(a==="back"){S.sel=null;S.modal=null;S.edit=false}
  else if(a==="del"){if(!confirm("Remove this trainee and all their records?"))return;S.t=S.t.filter(x=>x.id!==b.dataset.id);S.sel=null}
@@ -614,7 +621,9 @@ document.addEventListener("click",e=>{
  else if(a==="next"){const[v,m]=vmod(t);if(v<m)S.vm=v+1;else if(waiting(t)!=null&&ST[waiting(t)].m===v+1){const d=now();t.logs.push({s:waiting(t),a:d,st:d});S.vm=null}}
  else if(a==="score"){S.modal=+b.dataset.mi}
  else  if(a==="addopen"){S.add=true;S.addmsg="";S.addDraft={name:"",date:new Date().toISOString().slice(0,10),salary:"",wage:""};S.addBiz=S.view!=="overview"?S.view:(vbiz()[0]||"");S.addBranch=(addBranches(S.addBiz)[0]||{}).name||"";S.addDept=(addDepts()[0]||{}).name||"";S.addDesg=(addDesignations()[0]||{}).title||""}
- else if(a==="permissions-open"){S.permissions=true;S.permissionDraft=copyPermissions(ROLE_PERMS);S.permissionMsg=""}
+ else if(a==="settings-open"){S.settings=true}
+ else if(a==="settings-close"){S.settings=false}
+ else if(a==="permissions-open"){S.settings=false;S.permissions=true;S.permissionDraft=copyPermissions(ROLE_PERMS);S.permissionMsg=""}
  else if(a==="permissions-close"){S.permissions=false;S.permissionDraft=null;S.permissionMsg=""}
  else if(a==="permissions-save")return savePermissions();
  else if(a==="permissions-download")return downloadPermissionConfig();
@@ -954,7 +963,7 @@ function csv(){
 }
 document.addEventListener("keydown",e=>{
  if((e.key==="Enter"||e.key===" ")&&e.target.classList&&(e.target.classList.contains("bz")||e.target.classList.contains("hy-t"))){e.preventDefault();e.target.click();return}
- if(e.key==="Escape"&&(S.modal!=null||S.edit||S.add||S.upload||S.video||S.map||S.organization||S.permissions)){stopVideoPlayer();stopVideoPlayer("map-player");S.modal=null;S.edit=false;S.add=false;S.upload=false;S.video=false;S.map=false;S.organization=false;S.permissions=false;S.permissionDraft=null;S.mplay="";render()}
+ if(e.key==="Escape"&&(S.modal!=null||S.edit||S.add||S.upload||S.video||S.map||S.settings||S.organization||S.permissions)){stopVideoPlayer();stopVideoPlayer("map-player");S.modal=null;S.edit=false;S.add=false;S.upload=false;S.video=false;S.map=false;S.settings=false;S.organization=false;S.permissions=false;S.permissionDraft=null;S.mplay="";render()}
  else if(e.key==="Enter"&&S.add&&e.target.id.startsWith("add-category-name-")){const entity=e.target.id.slice("add-category-name-".length),b=document.querySelector(`[data-a="category-create"][data-entity="${entity}"]`);if(b)b.click()}
  else if(e.key==="Enter"&&S.add&&e.target.tagName==="INPUT"){const b=document.querySelector('[data-a="add"]');if(b)b.click()}
  else if(e.key==="Enter"&&e.target.id==="en-nm"){const b=document.querySelector('[data-a="esave"]');if(b)b.click()}
