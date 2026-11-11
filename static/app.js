@@ -657,7 +657,7 @@ function detail(t){
     const attachment=g&&g.pdf
      ?`<div class="wt-file"><span class="pdf-ico">PDF</span><div><b>Uploaded presentation</b><div class="mu">${pdfLink(t,g)} · ${g.pdf.sz?pdfSize(g.pdf.sz):"Size unavailable"} · uploaded ${fmt(g.pdf.at)}</div></div></div>`
      :g&&needsPdf(x)?'<div class="wt-missing">Presentation PDF not uploaded</div>':"";
-    const watch=g&&x.t==="VIDEO"&&vfolder(biz(t),i)?`<button type="button" class="sm" data-a="watchstep" data-s="${i}">▶ Watch video</button>`:"";
+    const watch=S.user.role!=="trainee"&&g&&x.t==="VIDEO"&&vfolder(biz(t),i)?`<button type="button" class="sm" data-a="watchstep" data-s="${i}">▶ Watch video</button>`:"";
     return `<article class="wt-item ${g?"":"is-locked"}"><div class="wt-node ${state[1]}" aria-hidden="true">${g&&g.c?"✓":i+1}</div><div class="wt-entry">
      <div class="wt-heading"><span class="chip wt-type">${x.t}</span><span class="chip ${state[1]}">${state[0]}</span></div>
      <h3 class="wt-title">${esc(x.n)}</h3><div class="mu">Planned ${x.d} · Monitored by ${esc(x.by)}</div>
@@ -679,7 +679,7 @@ const nav=`<div class="navbar"><button class="gh" data-a="prev" ${vm<=0?"disable
    :allow("work")?'<button class="p" data-a="go">▶ Start task</button>':"";
   act=`<div class="card cur"><div class="mu">Current · Step ${l.s+1} of ${ST.length} · ${MODS[x.m].n}</div>
  <h2 style="margin-top:4px"><span class="chip">${x.t}</span> ${esc(x.n)}</h2>
- <div class="mu">Duration ${x.d} · Monitored by ${x.by}</div>${x.t==="VIDEO"&&vfolder(biz(t),l.s)?`<div style="margin-top:10px"><button type="button" class="sm gh" data-a="watchstep" data-s="${l.s}">▶ Watch this video</button></div>`:""}
+ <div class="mu">Duration ${x.d} · Monitored by ${x.by}</div>${S.user.role!=="trainee"&&x.t==="VIDEO"&&vfolder(biz(t),l.s)?`<div style="margin-top:10px"><button type="button" class="sm gh" data-a="watchstep" data-s="${l.s}">▶ Watch this video</button></div>`:""}
  <div style="margin-top:10px">${activity}${actions}</div></div>`;
  }
  else if(waiting(t)!=null){const w=waiting(t),y=ST[w],moduleChanged=ST[w-1].m!==y.m;act=`<div class="card cur"><div class="mu">${moduleChanged?MODS[ST[w-1].m].n+" completed":"Previous task completed"}</div><h2 style="margin-top:4px">Next: ${moduleChanged?MODS[y.m].n:esc(y.n)}</h2><div class="mu" style="margin-bottom:10px">${moduleChanged?"First task: ":""}${esc(y.n)} (${y.d}). Start when you’re ready.</div>${allow("work")?`<button class="p" data-a="start">▶ Start ${moduleChanged?mshort(w):"task"}</button>`:""}</div>`}
@@ -689,17 +689,36 @@ const nav=`<div class="navbar"><button class="gh" data-a="prev" ${vm<=0?"disable
  ${act}${tiles(t)}<div class="card"><h2>Task timeline</h2><p class="mu">Tasks are shown in order. Any presentation PDF uploaded for a task appears on its card.</p>${timeline}${nav}</div>`;
 }
 
+function openTaskVideo(t,stepIndex,autoplay=false){
+ if(!t)return false;
+ const folder=vfolder(biz(t),stepIndex);
+ if(!folder||!ST[stepIndex]||ST[stepIndex].t!=="VIDEO")return false;
+ S.add=false;S.edit=false;S.modal=null;S.upload=false;S.map=false;S.vpre=folder;S.video=true;
+ S.videoStep=S.user.role==="trainee"?stepIndex:null;S.replayGateStep=null;S.replayGateMsg="";
+ if(S.user.role==="trainee"&&(S.videoCompletionError||S.completedVideoSteps.includes(stepIndex))){
+  S.videoStep=null;S.replayGateStep=stepIndex;S.replayGateMsg=S.videoCompletionError||"Checking HR approval…";
+ }
+ S.videoFinished=false;S.videoWatchSaved=false;S.videoReplayRequested=false;S.videoReturnAt=null;S.videoLatestTime=0;S.videoSeekTarget=null;
+ render();
+ if(S.user.role!=="trainee"){loadVideoFolders(folder);return true}
+ if(S.videoStep!=null){playVideo(folder,"video-player","video-player-status",autoplay);requestTraineeFullscreen()}
+ else if(S.replayGateStep!=null)loadReplayRequestsForGate();
+ return true;
+}
+
 // ---- Actions
 document.addEventListener("click",e=>{
  S.cx=e.clientX;S.cy=e.clientY;
  const profileMenu=document.querySelector(".profile-menu");
  if(profileMenu&&!profileMenu.contains(e.target))profileMenu.open=false;
  const b=e.target.closest("[data-a]");if(!b)return;const a=b.dataset.a,t=S.t.find(x=>x.id===S.sel);
+ let autoPlayVideoStep=null;
  if(a==="password-toggle"){const input=document.getElementById(b.dataset.target);if(!input)return;const visible=input.type==="password";input.type=visible?"text":"password";b.setAttribute("aria-label",visible?"Hide password":"Show password");b.title=visible?"Hide password":"Show password";b.innerHTML=visible?EYE_OFF:EYE;return}
  if(a==="logout")return logout();
  if(["cmp","go","start","next"].includes(a)&&!allow("work"))return;
  const NEED={"settings-addtrainee":"add",addopen:"add",add:"add",accountopen:"add",accountset:"add",del:"del",ename:"ename",esave:"ename",uploadopen:"upload",hyremove:"hier",score:"score",msave:"score",csv:"csv"};
  if(a==="videoopen"&&S.user.role==="trainee")return;
+ if(a==="watchstep")return openTaskVideo(t,+b.dataset.s);
  if(a==="replay-inbox-open"&&S.user.role!=="business")return;
  if(a.startsWith("permissions-")&&S.user.role!=="developer")return;
  if(a.startsWith("org")&&!canManageOrganization())return;
@@ -765,10 +784,10 @@ document.addEventListener("click",e=>{
  else if(a==="back"){S.sel=null;S.modal=null;S.edit=false}
  else if(a==="del"){if(!confirm("Remove this trainee and all their records?"))return;S.t=S.t.filter(x=>x.id!==b.dataset.id);S.sel=null}
  else if(a==="cmp"){const l=cur(t);if(needsPdf(ST[l.s])&&!l.pdf)return;l.c=now();if(l.s+1<ST.length)t.logs.push({s:l.s+1,a:now()})}
- else if(a==="start"){if(waiting(t)!=null){const d=now();t.logs.push({s:waiting(t),a:d,st:d});S.vm=null}}
- else if(a==="go"){const l=cur(t);if(l&&l._pending){const d=now();t.logs.push({s:l.s,a:l.a||d,st:d})}else if(l&&!l.st)l.st=now()}
+ else if(a==="start"){if(waiting(t)!=null){const step=waiting(t),d=now();t.logs.push({s:step,a:d,st:d});S.vm=null;if(S.user.role==="trainee"&&ST[step].t==="VIDEO"&&vfolder(biz(t),step))autoPlayVideoStep=step}}
+ else if(a==="go"){const l=cur(t);if(l&&l._pending){const d=now();t.logs.push({s:l.s,a:l.a||d,st:d})}else if(l&&!l.st)l.st=now();if(S.user.role==="trainee"&&l&&ST[l.s].t==="VIDEO"&&vfolder(biz(t),l.s))autoPlayVideoStep=l.s}
  else if(a==="prev"){S.vm=vmod(t)[0]-1}
- else if(a==="next"){const[v,m]=vmod(t);if(v<m)S.vm=v+1;else if(waiting(t)!=null&&ST[waiting(t)].m===v+1){const d=now();t.logs.push({s:waiting(t),a:d,st:d});S.vm=null}}
+ else if(a==="next"){const[v,m]=vmod(t);if(v<m)S.vm=v+1;else if(waiting(t)!=null&&ST[waiting(t)].m===v+1){const step=waiting(t),d=now();t.logs.push({s:step,a:d,st:d});S.vm=null;if(S.user.role==="trainee"&&ST[step].t==="VIDEO"&&vfolder(biz(t),step))autoPlayVideoStep=step}}
  else if(a==="score"){S.modal=+b.dataset.mi}
  else if(a==="addopen"){S.add=true;S.addmsg="";S.addDraft={name:"",password:"",date:new Date().toISOString().slice(0,10),salary:"",wage:""};S.addBiz=b.dataset.b|| (S.view!=="overview"?S.view:(vbiz()[0]||""));S.addBranch=(addBranches(S.addBiz)[0]||{}).name||"";S.addDept=(addDepts()[0]||{}).name||"";S.addDesg=(addDesignations()[0]||{}).title||""}
  else if(a==="accountopen"){S.accountModal=true;S.accountDone=false;S.accountMsg=""}
@@ -804,10 +823,9 @@ document.addEventListener("click",e=>{
  else if(a==="theme")return toggleTheme();
  else if(a==="csv")return csv();
  if(["add","del","cmp","start","go","next","esave","msave"].includes(a))save();
- render();
+ if(autoPlayVideoStep==null||!openTaskVideo(t,autoPlayVideoStep,true))render();
  if(a==="uploadopen")loadParentFolders();
  if(a==="videoopen")loadVideoFolders();
- if(a==="watchstep"){if(S.user.role!=="trainee")loadVideoFolders(S.vpre);else if(S.videoStep!=null){requestTraineeFullscreen();loadVideoFolders(S.vpre)}else if(S.replayGateStep!=null)loadReplayRequestsForGate()}
  if(a==="replay-inbox-open")loadReplayRequests();
 });
 
@@ -1047,7 +1065,7 @@ async function reviewVideoReplay(id,status){
  }catch(error){S.replayInboxMsg=error instanceof Error?error.message:String(error);render()}
 }
 
-function playVideo(folder,pid="video-player",sid="video-player-status"){
+function playVideo(folder,pid="video-player",sid="video-player-status",autoplay=false){
  const player=document.getElementById(pid),status=document.getElementById(sid);
  if(!player||!status)return;
  stopVideoPlayer(pid);
@@ -1071,9 +1089,15 @@ function playVideo(folder,pid="video-player",sid="video-player-status"){
  const playlist="/api/videos/"+folder.split("/").map(encodeURIComponent).join("/")+"/index.m3u8";
  player.hidden=false;
  player.onerror=()=>{status.textContent="Could not load this video. Check the playlist and storage."};
+ const tryAutoplay=()=>{
+  if(!autoplay)return;
+  const attempt=player.play();
+  if(attempt&&typeof attempt.catch==="function")attempt.catch(()=>{status.textContent="Playback did not start automatically. Press Play to begin."});
+ };
  status.textContent="Loading playlist…";
  if(player.canPlayType("application/vnd.apple.mpegurl")){
   player.src=playlist;
+  tryAutoplay();
   return;
  }
  if(!window.Hls||!window.Hls.isSupported()){
@@ -1083,7 +1107,10 @@ function playVideo(folder,pid="video-player",sid="video-player-status"){
  }
  const hls=new window.Hls();
  S.hls=hls;
- hls.on(window.Hls.Events.MANIFEST_PARSED,()=>{status.textContent="Ready to play."});
+ hls.on(window.Hls.Events.MANIFEST_PARSED,()=>{
+  status.textContent="Ready to play.";
+  if(autoplay&&player.paused)tryAutoplay();
+ });
  hls.on(window.Hls.Events.ERROR,(_,data)=>{
   if(data.fatal){
    status.textContent="Could not load this video. Check the playlist and storage.";
@@ -1093,6 +1120,7 @@ function playVideo(folder,pid="video-player",sid="video-player-status"){
  });
  hls.loadSource(playlist);
  hls.attachMedia(player);
+ tryAutoplay();
 }
 
 function sendVideo(form,onProgress,active){
