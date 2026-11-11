@@ -33,7 +33,7 @@ function timeStats(t){
   return Number.isFinite(end)&&Number.isFinite(start)?Math.max(0,Math.round((end-start)/60000)):0;
  };
  const completed=logs.filter(g=>g.c&&stepFor(g));
- const verified=new Set(logs.filter(g=>g.vt&&stepFor(g)).map(g=>g.s));
+ const completedSteps=new Set(completed.map(g=>g.s));
  const modules=MODS.map((module,mi)=>{
   const steps=ST.map((step,i)=>({step,index:i})).filter(x=>x.step.m===mi);
   const moduleLogs=completed.filter(g=>stepFor(g).m===mi);
@@ -41,7 +41,7 @@ function timeStats(t){
    name:module.n,
    plan:steps.reduce((sum,x)=>sum+x.step.mn,0),
    taken:moduleLogs.reduce((sum,g)=>sum+elapsed(g),0),
-   verified:steps.filter(x=>verified.has(x.index)).length,
+   completed:steps.filter(x=>completedSteps.has(x.index)).length,
    steps:steps.length
   };
  });
@@ -56,10 +56,9 @@ function timeStats(t){
  }));
  const total=modules.reduce((sum,module)=>sum+module.plan,0);
  const taken=modules.reduce((sum,module)=>sum+module.taken,0);
- const verifiedTime=logs.filter(g=>g.vt&&stepFor(g)).reduce((sum,g)=>sum+stepFor(g).mn,0);
  const completedPlan=completed.reduce((sum,g)=>sum+stepFor(g).mn,0);
  return {
-  modules,byType,total,taken,verifiedTime,verifiedCount:verified.size,
+  modules,byType,total,taken,completedCount:completedSteps.size,
   steps:ST.length,pace:completedPlan?Math.round(taken/completedPlan*100):null
  };
 }
@@ -78,23 +77,27 @@ function tiles(t){
  return `<div class="card"><h2>Overview</h2><div class="tg">`
   +tile("Total task time (overall)",hm(stats.total),`${stats.steps} steps planned`)
   +tile("Total time taken (overall)",hm(stats.taken),"Completed steps only")
-  +tile("Total verified",`${stats.verifiedCount} / ${stats.steps}`,"Steps verified")
+  +tile("Total completed",`${stats.completedCount} / ${stats.steps}`,"Tasks completed")
   +tile("Total score",scoreText(t),scoreSub(t),"tot-sc")
   +`</div>`+modTable(stats,t)+`</div>`;
 }
-// ---- Module-wise: planned time vs time taken, verified count, score and remark
-const modDone=(t,mi)=>ST.every((x,i)=>x.m!==mi||t.logs.some(g=>g.vt&&g.s===i));
+// ---- Module-wise: planned time vs time taken, completed count, score and remark
+const modDone=(t,mi)=>ST.every((x,i)=>x.m!==mi||t.logs.some(g=>g.c&&g.s===i));
 function modTable(stats,t){
  const rows=stats.modules.map((module,mi)=>{
   const sc=modScore(t,mi),rm=modRemark(t,mi),ok=modDone(t,mi);
   const scoreCell=sc!=null?`<b>${sc} / ${MAXSC}</b>`:ok&&allow("score")?`<button class="p sm" data-a="score" data-mi="${mi}">Add score</button>`:`<span class="lk">–</span>`;
   const remCell=sc!=null?`<div class="sp"><span>${rm?esc(rm):'<span class="lk">–</span>'}</span>${allow("score")?`<button class="sm" data-a="score" data-mi="${mi}">Edit</button>`:""}</div>`:`<span class="lk">–</span>`;
-  return `<tr><td>${module.name}</td><td><b>${hm(module.plan)}</b></td><td><b>${hm(module.taken)}</b></td><td>${module.verified}/${module.steps}</td><td>${scoreCell}</td><td>${remCell}</td></tr>`}).join("");
- return `<h2 style="margin-top:22px">Module-wise summary</h2><div class="sc"><table><tr><th>Module</th><th>Total task time</th><th>Total time taken</th><th>Verified</th><th>Score (out of ${MAXSC})</th><th>Remark</th></tr>${rows}<tr><td><b>All modules</b></td><td><b>${hm(stats.total)}</b></td><td><b>${hm(stats.taken)}</b></td><td>${stats.verifiedCount}/${stats.steps}</td><td><b id="tot-sc-row">${scoreText(t)}</b></td><td></td></tr></table></div><div class="mu">Fixed time comes from the task sheet. Time taken counts only completed steps, from Start to Mark completed. Score and remark can be added once every step of a module is verified.</div>`;
+  return `<tr><td>${module.name}</td><td><b>${hm(module.plan)}</b></td><td><b>${hm(module.taken)}</b></td><td>${module.completed}/${module.steps}</td><td>${scoreCell}</td><td>${remCell}</td></tr>`}).join("");
+ return `<h2 style="margin-top:22px">Module-wise summary</h2><div class="sc"><table><tr><th>Module</th><th>Total task time</th><th>Total time taken</th><th>Completed</th><th>Score (out of ${MAXSC})</th><th>Remark</th></tr>${rows}<tr><td><b>All modules</b></td><td><b>${hm(stats.total)}</b></td><td><b>${hm(stats.taken)}</b></td><td>${stats.completedCount}/${stats.steps}</td><td><b id="tot-sc-row">${scoreText(t)}</b></td><td></td></tr></table></div><div class="mu">Fixed time comes from the task sheet. Time taken counts only completed steps, from Start to Mark completed. Score and remark can be added once every step of a module is completed.</div>`;
 }
 // ---- Pop-up window asking for the module score and remark
 function uploadModal(){
  return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="upload-title"><div class="bd" data-a="uploadcancel"></div><div class="mb wide"><h2 id="upload-title">Upload video</h2><div class="mu">The server converts the video to HLS and uploads the playlist and segments.</div><form id="video-upload-form"><label class="fl">Video file<input id="video-file" name="video" type="file" accept="video/*" required></label><label class="fl">Parent folder<select id="video-parent-folder" name="parent_folder" required><option value="">Loading parent folders…</option></select></label><div id="parent-create-panel" hidden><label class="fl">New parent folder name<input id="new-parent-folder" type="text" placeholder="e.g. Marketing"></label><div class="row"><button type="button" data-a="parent-create-cancel">Cancel</button><button type="button" class="p" data-a="parent-create" id="parent-create-submit">Create parent folder</button></div></div><div id="parent-folder-status" class="mu" role="status" aria-live="polite"></div><label class="fl">Video folder inside parent<input id="video-folder" name="video_folder" type="text" placeholder="e.g. marketing-intro" required></label><div id="video-upload-status" class="mu upload-status" role="status" aria-live="polite"></div><div id="video-upload-progress" class="upload-progress" role="progressbar" aria-label="Video upload progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden><span class="upload-progress__bar"></span></div><div id="video-upload-meta" class="upload-meta" hidden><span id="video-upload-phase"></span><strong id="video-upload-pct">0%</strong></div><div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="uploadcancel">Cancel</button><button class="p" type="submit" id="video-upload-submit">Convert and upload</button></div></form></div></div>`;
+}
+function traineeAccountModal(t){
+ const done=S.accountDone;
+ return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="account-title"><div class="bd" data-a="accountcancel"></div><div class="mb"><h2 id="account-title">${done?"Login is ready":"Set trainee login"}</h2><div class="mu">Username: <b>${esc(t.name)}</b></div>${done?`<div class="mu" role="status" style="margin-top:12px">${esc(S.accountMsg)} Sign in with this name and the password you just set.</div><div class="row" style="margin-top:16px;justify-content:flex-end"><button class="p" data-a="accountcancel">Done</button></div>`:`<div class="mu" style="margin:10px 0">Choose a password for this trainee. Use the trainee name above as the username.</div><label class="fl">New password<div class="pw-wrap"><input id="account-password" type="password" minlength="6" autocomplete="new-password" required>${passwordToggle("account-password")}</div></label><label class="fl">Type the password again<div class="pw-wrap"><input id="account-confirm" type="password" minlength="6" autocomplete="new-password" required>${passwordToggle("account-confirm")}</div></label><div class="lg-err" role="status" aria-live="polite">${esc(S.accountMsg)}</div><div class="row" style="margin-top:16px;justify-content:flex-end"><button data-a="accountcancel">Cancel</button><button class="p" data-a="accountset">Save login</button></div>`}</div></div>`;
 }
 function videoModal(){
  return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="video-title"><div class="bd" data-a="videocancel"></div><div class="mb wide"><h2 id="video-title">Watch video</h2><label class="fl">Video folder<select id="video-library-folder"><option value="">Loading folders…</option></select></label><div id="video-player-status" class="mu video-player-status" role="status" aria-live="polite"></div><video id="video-player" class="video-player" controls playsinline preload="metadata" hidden></video><div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="videocancel">Close</button></div></div></div>`;
@@ -127,6 +130,7 @@ function modal(t){
  if(S.map)return mapModal();
  if(S.upload)return uploadModal();
  if(S.video)return videoModal();
+ if(S.accountModal)return traineeAccountModal(t);
  if(S.add)return addModal();
  if(!t)return"";
  if(S.edit)return `<div class="ov" role="dialog" aria-modal="true"><div class="bd" data-a="mcancel"></div><div class="mb"><h2 style="margin-top:2px">Edit trainee name</h2><label class="fl">Trainee name<input id="en-nm" type="text" value="${esc(t.name)}" placeholder="Full name"></label><div class="row" style="margin-top:16px;justify-content:flex-end"><button data-a="mcancel">Cancel</button><button class="p" data-a="esave">Save</button></div></div></div>`;
@@ -152,7 +156,7 @@ const mv=mi=>ST.filter(x=>x.m===mi&&x.t==="VIDEO").reduce((a,x)=>a+x.min,0);
 // ---- State
 const BIZ=BUSINESSES;
 const biz=t=>t.biz||"";
-let S={t:[],sel:null,upload:false,video:false,hls:null,view:"overview",bv:"overview",nav:"dashboard",map:false,settings:false,organization:false,permissions:false,permissionDraft:null,permissionMsg:"",orgEntity:"business",orgParent:"",orgName:"",orgMsg:"",vmap:{},folders:[],mb:"Magnus",mm:0,mt:null,mf:"",mplay:"",mmsg:"",mfstat:"",himg:{},hmsg:{},user:null,options:{businesses:[],branches:[],departments:[],designations:[]},addBiz:"",addBranch:"",addDept:"",addDesg:"",addmsg:"",loginmsg:""};
+let S={t:[],sel:null,upload:false,video:false,hls:null,view:"overview",bv:"overview",nav:"dashboard",map:false,settings:false,organization:false,permissions:false,permissionDraft:null,permissionMsg:"",accountModal:false,accountDone:false,accountMsg:"",orgEntity:"business",orgParent:"",orgName:"",orgMsg:"",vmap:{},folders:[],mb:"Magnus",mm:0,mt:null,mf:"",mplay:"",mmsg:"",mfstat:"",himg:{},hmsg:{},user:null,options:{businesses:[],branches:[],departments:[],designations:[]},addBiz:"",addBranch:"",addDept:"",addDesg:"",addmsg:"",loginmsg:""};
 let activeVideoUpload=null;
 // ---- Supabase Auth-backed roles
 const sameName=(a,b)=>String(a||"").trim().toLowerCase()===String(b||"").trim().toLowerCase();
@@ -192,7 +196,7 @@ const roleLabel=()=>S.user?(ROLE_LABELS[S.user.role]||S.user.role):"";
 const scopeLabel=()=>{const u=S.user;if(!u)return"";if(ALLBIZ(u))return"All businesses";
  if(u.business&&u.business.name)return [u.business.name,u.branch&&u.branch.name,u.department&&u.department.name].filter(Boolean).join(" · ");
  return""};
-const initView=()=>{S.sel=null;S.vm=null;S.q="";S.bv="overview";S.nav="dashboard";S.modal=null;S.edit=false;S.add=false;S.upload=false;S.video=false;S.map=false;S.settings=false;S.organization=false;S.permissions=false;S.permissionDraft=null;S.view=oneBiz()?vbiz()[0]:"overview"};
+const initView=()=>{S.sel=null;S.vm=null;S.q="";S.bv="overview";S.nav="dashboard";S.modal=null;S.edit=false;S.add=false;S.accountModal=false;S.accountDone=false;S.accountMsg="";S.upload=false;S.video=false;S.map=false;S.settings=false;S.organization=false;S.permissions=false;S.permissionDraft=null;S.view=oneBiz()?vbiz()[0]:"overview"};
 async function login(username,password){
  const response=await fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username,password})});
  const result=await response.json().catch(()=>({}));
@@ -213,7 +217,7 @@ function renderLogin(){
  const ap=document.getElementById("app");S.lv=null;
  if(ap.querySelector(".lgn"))return; // keep what the person has typed
  ap.classList.remove("an");
- ap.innerHTML=`<div class="lgn"><form class="card lgc" id="login-form"><div class="bk"><div class="lg">M</div><div><div class="brand">Magnus</div><div class="mu">Trainee Tracker</div></div></div><div><h1>Sign in</h1><div class="mu" style="margin-top:4px">Use your developer username or Supabase Auth email.</div></div><label class="fl">Username or email<input id="lg-username" name="username" autocomplete="username" required></label><label class="fl">Password<div class="pw-wrap"><input id="lg-p" name="password" type="password" autocomplete="current-password" required>${passwordToggle("lg-p")}</div></label><div id="lg-e" class="lg-err" role="alert" aria-live="polite">${esc(S.loginmsg)}</div><button class="p" type="submit">Sign in</button></form></div>`;
+ ap.innerHTML=`<div class="lgn"><form class="card lgc" id="login-form"><div class="bk"><div class="lg">M</div><div><div class="brand">Magnus</div><div class="mu">Trainee Tracker</div></div></div><div><h1>Sign in</h1><div class="mu" style="margin-top:4px">Trainees use their name as username; admins may use email.</div></div><label class="fl">Username or email<input id="lg-username" name="username" autocomplete="username" required></label><label class="fl">Password<div class="pw-wrap"><input id="lg-p" name="password" type="password" autocomplete="current-password" required>${passwordToggle("lg-p")}</div></label><div id="lg-e" class="lg-err" role="alert" aria-live="polite">${esc(S.loginmsg)}</div><button class="p" type="submit">Sign in</button></form></div>`;
  const username=document.getElementById("lg-username");if(username)username.focus();
 }
 document.addEventListener("submit",e=>{
@@ -225,6 +229,11 @@ document.addEventListener("submit",e=>{
   .catch(error=>{er.textContent=error instanceof Error?error.message:String(error)})
   .finally(()=>{if(button.isConnected)button.disabled=false});
 });
+document.addEventListener("input",e=>{
+ if(!S.addDraft)return;
+ const fields={nm:"name",tp:"password",jd:"date",sl:"salary",wg:"wage"};
+ if(fields[e.target.id])S.addDraft[fields[e.target.id]]=e.target.value;
+});
 // ---- Video map: business -> {"moduleIndex|task title": "video folder"}
 const mkey=i=>ST[i].m+"|"+ST[i].n;
 const vfolder=(b,i)=>(S.vmap[b]||{})[mkey(i)]||"";
@@ -232,7 +241,25 @@ const mvideos=mi=>ST.map((x,i)=>({x,i})).filter(o=>o.x.m===mi&&o.x.t==="VIDEO");
 const loadMap=()=>fetch("/api/video-map").then(r=>r.json()).then(d=>{if(d&&typeof d==="object"&&!d.error)S.vmap=d}).catch(()=>{});
 const loadOptions=()=>fetch("/api/options").then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error||"Could not load organization options.");S.options=d;BUSINESSES.splice(0,BUSINESSES.length,...d.businesses.map(x=>x.name));BRANCHES.splice(0,BRANCHES.length,...[...new Set(d.branches.map(x=>x.name))]);DEPTS.splice(0,DEPTS.length,...[...new Set(d.departments.map(x=>x.name))])});
 const load=()=>fetch("/api/trainees").then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error||"Could not load trainees.");if(!Array.isArray(d))throw new Error("The server returned invalid trainee data.");S.t=d;S.loaded=true});
-const save=()=>S.loaded?fetch("/api/trainees",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(S.t)}).then(async r=>{const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"Could not save trainee data.");return d}).catch(error=>{alert(error instanceof Error?error.message:String(error));return load().then(render).catch(loadError=>alert(loadError instanceof Error?loadError.message:String(loadError)))}):Promise.resolve();
+const save=()=>{
+ if(!S.loaded)return Promise.resolve();
+ const body=JSON.stringify(S.t);
+ S.t.forEach(trainee=>{delete trainee.account_password});
+ return fetch("/api/trainees",{method:"PUT",headers:{"Content-Type":"application/json"},body}).then(async r=>{const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"Could not save trainee data.");return d}).catch(error=>{alert(error instanceof Error?error.message:String(error));return load().then(render).catch(loadError=>alert(loadError instanceof Error?loadError.message:String(loadError)))});
+};
+async function setTraineeLogin(t){
+ const password=document.getElementById("account-password").value;
+ const confirmation=document.getElementById("account-confirm").value;
+ if(password.length<6){S.accountMsg="Password must be at least 6 characters.";render();return}
+ if(password!==confirmation){S.accountMsg="The passwords do not match.";render();return}
+ try{
+  const response=await fetch(`/api/trainees/${encodeURIComponent(t.id)}/account`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password})});
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(result.error||"Could not set the trainee login.");
+  S.accountDone=true;S.accountMsg="The trainee login was saved.";
+ }catch(error){S.accountMsg=error instanceof Error?error.message:String(error)}
+ render();
+}
 const now=()=>new Date().toISOString();
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const EYE='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>';
@@ -240,8 +267,12 @@ const EYE_OFF='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 3 18 18M1
 const passwordToggle=id=>`<button class="pw-toggle" type="button" data-a="password-toggle" data-target="${id}" aria-label="Show password" title="Show password">${EYE}</button>`;
 const fmt=i=>i?new Date(i).toLocaleString([], {dateStyle:"medium",timeStyle:"short"}):"–";
 const took=(a,b)=>{if(!a||!b)return"–";const m=Math.round((new Date(b)-new Date(a))/60000);return m>=60?Math.floor(m/60)+" h "+m%60+" m":m+" m"};
-const done=t=>t.logs.filter(l=>l.vt).length;
-const cur=t=>{const l=t.logs[t.logs.length-1];return l.vt?null:l};
+const done=t=>t.logs.filter(l=>l.c).length;
+const cur=t=>{
+ const l=t.logs[t.logs.length-1];
+ if(!l.c)return l;
+ return l.s+1<ST.length?{s:l.s+1,a:l.c,_pending:true}:null;
+};
 const needsPdf=x=>x.t==="PRE"||(x.t==="TASK"&&/presentation/i.test(x.n));
 const PDFMAX=25*1024*1024;
 const pdfSize=b=>b>=1048576?(b/1048576).toFixed(1)+" MB":Math.max(1,Math.round(b/1024))+" KB";
@@ -249,14 +280,14 @@ const pdfLink=(t,l)=>`<a class="pdf-link" href="/api/presentations/${t.id}/${l.s
 const pdfUi=(t,l)=>l.pdf
  ?`<div class="pdf-box"><span class="pdf-ico">PDF</span><div class="pdf-meta">${pdfLink(t,l)}<div class="mu">${pdfSize(l.pdf.sz)} · uploaded ${fmt(l.pdf.at)}</div></div><label class="pdf-replace">Replace<input type="file" id="pdf-file" accept="application/pdf,.pdf" hidden></label></div><div id="pdf-status" class="mu" role="status"></div>`
  :`<div class="pdf-box pdf-empty"><div class="pdf-meta"><b>Upload your presentation (PDF)</b><div class="mu">PDF files only · up to 25 MB</div></div><input type="file" id="pdf-file" accept="application/pdf,.pdf"></div><div id="pdf-status" class="mu" role="status"></div>`;
-const waiting=t=>{const g=t.logs[t.logs.length-1];return g.vt&&g.s+1<ST.length?g.s+1:null};
-const seg=t=>'<div class="seg">'+MODS.map((m,mi)=>{const a=ST.filter(x=>x.m===mi),n=a.filter(x=>t.logs.some(g=>g.vt&&g.s===ST.indexOf(x))).length;return `<i title="${m.n}"><b style="width:${n/a.length*100}%"></b></i>`}).join("")+'</div>';
+const waiting=t=>{const g=t.logs[t.logs.length-1];return g.c&&g.s+1<ST.length?g.s+1:null};
+const seg=t=>'<div class="seg">'+MODS.map((m,mi)=>{const a=ST.filter(x=>x.m===mi),n=a.filter(x=>t.logs.some(g=>g.c&&g.s===ST.indexOf(x))).length;return `<i title="${m.n}"><b style="width:${n/a.length*100}%"></b></i>`}).join("")+'</div>';
 const inr=v=>v?"₹"+Number(v).toLocaleString("en-IN"):"–";
 const jd=v=>v?new Date(v+"T00:00").toLocaleDateString([],{dateStyle:"medium"}):"–";
 const info=t=>[["Branch",esc(t.branch||"–")],["Department",esc(t.dept)],["Designation",esc(t.desg||"–")],["Joining date",jd(t.join)],["Salary / month",inr(t.sal)],["Wage / day",inr(t.wage)]].filter(x=>allow("salary")||!/^(Salary|Wage)/.test(x[0]));
-const vmod=t=>{const sm=Math.max(...t.logs.map(q=>ST[q.s].m));return[S.vm==null?sm:Math.max(0,Math.min(S.vm,sm)),sm]};
+const vmod=t=>{const next=waiting(t),sm=Math.max(...t.logs.map(q=>ST[q.s].m),next==null?0:ST[next].m);return[S.vm==null?sm:Math.max(0,Math.min(S.vm,sm)),sm]};
 const mshort=i=>MODS[ST[i].m].n.split(" · ")[0];
-const status=t=>{const l=cur(t);return !l?(waiting(t)!=null?["Ready to start "+mshort(waiting(t)),"s-rdy"]:["Completed","ok s-done"]):l.c?["Awaiting verification","s-ver"]:l.st?["In progress","s-prog"]:["Assigned – not started","s-asg"]};
+const status=t=>{const l=cur(t);return !l?(waiting(t)!=null?["Ready for next task","s-rdy"]:["Completed","ok s-done"]):l.st?["In progress","s-prog"]:["Assigned – not started","s-asg"]};
 
 // ---- Render
 function render(){
@@ -288,7 +319,7 @@ function side(t){
  const brand=`<div class="bk"><div class="lg">M</div><div><div class="brand">Magnus</div><div class="mu">Trainee Tracker</div></div></div>`;
  const navButton=(key,icon,label)=>`<button type="button" class="nav-link${S.nav===key?" active":""}" data-a="nav-${key}"><span class="nav-ico" aria-hidden="true">${icon}</span><span>${label}</span></button>`;
  const mediaButton=(permission,action,icon,label)=>allow(permission)?`<button type="button" class="nav-link" data-a="${action}"><span class="nav-ico" aria-hidden="true">${icon}</span><span>${label}</span></button>`:"";
- const detailTools=t?`<div class="side-section"><div class="side-label">Trainee</div>${S.user.role==="trainee"?"":'<button type="button" class="nav-link" data-a="back"><span class="nav-ico" aria-hidden="true">‹</span><span>All trainees</span></button>'}${allow("ename")?'<button type="button" class="nav-link" data-a="ename"><span class="nav-ico" aria-hidden="true">✎</span><span>Edit name</span></button>':""}${allow("del")?`<button type="button" class="nav-link danger-link" data-a="del" data-id="${t.id}"><span class="nav-ico" aria-hidden="true">×</span><span>Remove trainee</span></button>`:""}</div>`:"";
+ const detailTools=t?`<div class="side-section"><div class="side-label">Trainee</div>${S.user.role==="trainee"?"":'<button type="button" class="nav-link" data-a="back"><span class="nav-ico" aria-hidden="true">‹</span><span>All trainees</span></button>'}${allow("ename")?'<button type="button" class="nav-link" data-a="ename"><span class="nav-ico" aria-hidden="true">✎</span><span>Edit name</span></button>':""}${canAddTrainee()?'<button type="button" class="nav-link" data-a="accountopen"><span class="nav-ico" aria-hidden="true">🔑</span><span>Set login password</span></button>':""}${allow("del")?`<button type="button" class="nav-link danger-link" data-a="del" data-id="${t.id}"><span class="nav-ico" aria-hidden="true">×</span><span>Remove trainee</span></button>`:""}</div>`:"";
  const who=`<div class="who"><span class="avatar">${esc(String(S.user.full_name||roleLabel()).trim().slice(0,1).toUpperCase()||"U")}</span><div class="who-info"><b>${esc(S.user.full_name||roleLabel())}</b><span>${esc(roleLabel())}${scopeLabel()?" · "+esc(scopeLabel()):""}</span></div><button type="button" class="sm" data-a="logout">Sign out</button></div>`;
  return `<aside class="sb">${brand}<nav class="side-nav" aria-label="Main navigation"><div class="side-section"><div class="side-label">Navigation</div>${navButton("dashboard","▦","Dashboard")}${navButton("trainees","♙","Trainees")}${S.user.role==="trainee"?"":navButton("businesses","▣","Businesses")}<button type="button" class="nav-link${S.settings?" active":""}" data-a="settings-open"><span class="nav-ico" aria-hidden="true">⚙</span><span>Settings</span></button></div>${detailTools}<div class="side-section"><div class="side-label">Media</div>${mediaButton("upload","uploadopen","↑","Upload video")}${mediaButton("watch","videoopen","▷","Watch video")}${mediaButton("map","mapopen","↗","Map videos")}</div></nav><div class="sidebar-bottom">${who}<div class="side-foot"><span>Training duration</span><b>${hm(AT)}</b><small>${ST.length} steps · ${hm(VT)} video</small>${tbtn()}</div></div></aside>`;
 }
@@ -407,7 +438,7 @@ function tcards(){
  <div class="sp"><b>${esc(t.name)}</b><span class="chip ${c}">${s}</span></div>
  <div class="mu">${[S.view==="overview"&&q?biz(t):"",t.branch,t.dept,t.desg].filter(Boolean).map(esc).join(" · ")}${t.join?" · Joined "+jd(t.join):""}</div>
  ${seg(t)}
- <div class="mu">${n}/${ST.length} verified${l?` · Now: Step ${l.s+1} – ${esc(ST[l.s].n)}`:""}</div></div>`}).join("")+'</div>':'<div class="mu">'+emptyMsg()+'</div>';
+ <div class="mu">${n}/${ST.length} tasks completed${l?` · Now: Step ${l.s+1} – ${esc(ST[l.s].n)}`:""}</div></div>`}).join("")+'</div>':'<div class="mu">'+emptyMsg()+'</div>';
 }
 // ---- Hierarchy: Business > Branch > Department > trainees
 const groupBy=(L,f)=>{const m=new Map();L.forEach(t=>{const k=f(t);if(!m.has(k))m.set(k,[]);m.get(k).push(t)});return[...m.entries()]};
@@ -424,12 +455,12 @@ function hierarchy(){
  if(S.view!=="overview")return '<div class="card hy">'+hierBranches(L)+'</div>';
  return BIZ.map(b=>{const bl=L.filter(t=>biz(t)===b);return bl.length?`<div class="card hy"><div class="hy-h hy-top"><h2>${esc(b)}</h2><span class="mu">${bl.length} ${bl.length===1?"trainee":"trainees"}</span></div>${hierBranches(bl)}</div>`:""}).join("");
 }
-const bstats=L=>{const aw=L.filter(t=>{const l=cur(t);return l&&l.c}).length,dn=L.filter(t=>status(t)[0]==="Completed").length;return{n:L.length,aw,dn,ip:L.length-aw-dn}};
+const bstats=L=>{const dn=L.filter(t=>status(t)[0]==="Completed").length;return{n:L.length,dn,ip:L.length-dn}};
 function bizCards(){
  return '<div class="bg">'+vbiz().map(b=>{const k=bstats(scoped().filter(t=>biz(t)===b));return `<div class="card item bz" data-a="openbiz" data-b="${esc(b)}" role="button" tabindex="0">
   <div class="sp"><b>${esc(b)}</b></div>
   <div class="bn">${k.n}</div><div class="mu">${k.n===1?"trainee":"trainees"}</div>
-  <div class="bs mu"><span>${k.ip} in progress</span><span>${k.aw} awaiting</span><span>${k.dn} completed</span></div></div>`}).join("")+'</div>';
+  <div class="bs mu"><span>${k.ip} in progress</span><span>${k.dn} completed</span></div></div>`}).join("")+'</div>';
 }
 // ---- Hierarchy images (one per business, stored in the bucket)
 const HYMAX=10*1024*1024;
@@ -476,17 +507,17 @@ function list(){
  const ov=S.view==="overview",k=bstats(ov?scoped():scoped().filter(t=>biz(t)===S.view));
  const st=(l,v,sub)=>`<div class="tl"><span class="mu">${l}</span><b>${v}</b><span class="mu">${sub}</span></div>`;
  const title=!ov?S.view:S.nav==="businesses"?"Businesses":S.nav==="trainees"?"Trainees":"Dashboard";
- const desc=!ov?`Follow every ${esc(S.view)} trainee through ${MODS.length} modules and ${ST.length} tasks, one verified step at a time.`:S.nav==="trainees"?"View and search trainees across the businesses in your scope.":S.nav==="businesses"?"Choose a business to view its trainees and hierarchy.":"Overall overview across all businesses. Open a business below to see its trainees and hierarchy.";
+ const desc=!ov?`Follow every ${esc(S.view)} trainee through ${MODS.length} modules and ${ST.length} tasks, one step at a time.`:S.nav==="trainees"?"View and search trainees across the businesses in your scope.":S.nav==="businesses"?"Choose a business to view its trainees and hierarchy.":"Overall overview across all businesses. Open a business below to see its trainees and hierarchy.";
  return `${!ov&&!oneBiz()?'<button class="bk-btn" data-a="allbiz">← All businesses</button>':""}<div class="ph"><h1>${esc(title)}</h1><div class="mu">${desc}</div></div>
  <label class="fl vw"><span>View</span><select id="view">${[["overview","Overview"],["hierarchy","Hierarchy"]].map(([v,n])=>`<option value="${v}"${S.bv===v?" selected":""}>${n}</option>`).join("")}</select></label>
- <div class="tg">${st("Total trainees",k.n,"enrolled")}${st("In progress",k.ip,"working through steps")}${st("Awaiting verification",k.aw,"needs a verifier")}${st("Completed",k.dn,"all steps verified")}</div>
+ <div class="tg">${st("Total trainees",k.n,"enrolled")}${st("In progress",k.ip,"working through steps")}${st("Completed",k.dn,"all tasks completed")}</div>
  <div id="tl">${listBody()}</div>`;
 }
 // ---- Add trainee pop-up form
 function addModal(){
  const branches=addBranches(),departments=addDepts(),designations=addDesignations();
  const draft=S.addDraft||{};
- return `<div class="ov" role="dialog" aria-modal="true"><div class="bd" data-a="mcancel"></div><div class="mb wide"><h2 style="margin-top:2px">Add trainee</h2><div class="fg"><label>Trainee name<input id="nm" placeholder="Full name" value="${esc(draft.name||"")}"></label><label>Joining date<input id="jd" type="date" value="${esc(draft.date||new Date().toISOString().slice(0,10))}"></label><div><label>Business<select id="bz">${addSelectOptions(vbiz(),S.addBiz,x=>x,x=>x,"Choose business…","business")}</select></label>${addCategoryPanel("business")}</div><div><label>Branch<select id="br">${addSelectOptions(branches,S.addBranch,x=>x.name,x=>x.name,"Choose branch…","branch")}</select></label>${addCategoryPanel("branch")}</div><div><label>Department<select id="dp">${addSelectOptions(departments,S.addDept,x=>x.name,x=>x.name,"Choose department…","department")}</select></label>${addCategoryPanel("department")}</div><div><label>Designation<select id="ds">${addSelectOptions(designations,S.addDesg,x=>x.title,x=>x.title,"Choose designation…","designation")}</select></label>${addCategoryPanel("designation")}</div><label>Salary (₹ per month)<input id="sl" type="number" min="0" inputmode="numeric" placeholder="0" value="${esc(draft.salary||"")}"></label><label>Wage (₹ per day)<input id="wg" type="number" min="0" inputmode="numeric" placeholder="0" value="${esc(draft.wage||"")}"></label></div><div class="lg-err" role="status">${esc(S.addmsg||"")}</div><div class="mu" style="margin-top:12px">To add a missing category, choose “＋ Add …”, enter its name here, and click Add. Step 1 is assigned right now. Each next step unlocks only after the previous one is completed and verified.</div><div class="row" style="margin-top:16px;justify-content:flex-end"><button data-a="mcancel">Cancel</button><button class="p" data-a="add"${branches.length&&departments.length&&designations.length?"":" disabled"}>Add trainee &amp; assign Step 1</button></div></div></div>`;
+ return `<div class="ov" role="dialog" aria-modal="true"><div class="bd" data-a="mcancel"></div><div class="mb wide"><h2 style="margin-top:2px">Add trainee</h2><div class="fg"><label>Trainee name (login username)<input id="nm" placeholder="Full name" value="${esc(draft.name||"")}"></label><label>Login password<div class="pw-wrap"><input id="tp" type="password" minlength="6" autocomplete="new-password" value="${esc(draft.password||"")}">${passwordToggle("tp")}</div></label><label>Joining date<input id="jd" type="date" value="${esc(draft.date||new Date().toISOString().slice(0,10))}"></label><div><label>Business<select id="bz">${addSelectOptions(vbiz(),S.addBiz,x=>x,x=>x,"Choose business…","business")}</select></label>${addCategoryPanel("business")}</div><div><label>Branch<select id="br">${addSelectOptions(branches,S.addBranch,x=>x.name,x=>x.name,"Choose branch…","branch")}</select></label>${addCategoryPanel("branch")}</div><div><label>Department<select id="dp">${addSelectOptions(departments,S.addDept,x=>x.name,x=>x.name,"Choose department…","department")}</select></label>${addCategoryPanel("department")}</div><div><label>Designation<select id="ds">${addSelectOptions(designations,S.addDesg,x=>x.title,x=>x.title,"Choose designation…","designation")}</select></label>${addCategoryPanel("designation")}</div><label>Salary (₹ per month)<input id="sl" type="number" min="0" inputmode="numeric" placeholder="0" value="${esc(draft.salary||"")}"></label><label>Wage (₹ per day)<input id="wg" type="number" min="0" inputmode="numeric" placeholder="0" value="${esc(draft.wage||"")}"></label></div><div id="add-error" class="lg-err" role="status">${esc(S.addmsg||"")}</div><div class="mu" style="margin-top:12px">The trainee will sign in using their name and this password. To add a missing category, choose “＋ Add …” and enter its name. Step 1 is assigned right now; each next task unlocks after completion.</div><div class="row" style="margin-top:16px;justify-content:flex-end"><button data-a="mcancel">Cancel</button><button class="p" data-a="add"${branches.length&&departments.length&&designations.length?"":" disabled"}>Create login &amp; assign Step 1</button></div></div></div>`;
 }
 function showAddCategory(entity){
  if(!canManageOrganization())return;
@@ -534,40 +565,47 @@ async function createAddCategory(entity){
  }
 }
 function detail(t){
- const l=cur(t),[s,c]=status(t);let rows="",lm=-1;const[vm,sm]=vmod(t);
- ST.forEach((x,i)=>{
-  if(x.m!==vm)return;
-  if(x.m!==lm){lm=x.m;const f0=t.logs.find(q=>ST[q.s].m===lm);rows+=`<tr class="mod"><td colspan="10">${MODS[lm].n} <span class="mu">· ${f0?"Started "+fmt(f0.a):"Not started"}</span> <span class="mu">· Video total: ${hm(mv(lm))}</span></td></tr>`}
-  const g=t.logs.find(q=>q.s===i);
-  const st=g?(g.vt?'<span class="ok">Verified</span>':g.c?'<span class="wa">Awaiting verify</span>':g.st?'<span class="wa">In progress</span>':'<span class="wa">Assigned</span>'):"Locked";
-  rows+=`<tr class="${g?"":"lkd"}"><td>${i+1}</td><td>${x.t}</td><td>${esc(x.n)}${g&&x.t==="VIDEO"&&vfolder(biz(t),i)?` <button type="button" class="sm" data-a="watchstep" data-s="${i}">▶ Watch</button>`:""}</td><td>${x.d}</td><td>${x.by}</td><td>${g?fmt(g.st):"–"}</td><td>${g?fmt(g.c):"–"}</td><td>${g&&g.vt?esc(g.v):"–"}</td><td>${g?took(g.st||g.a,g.c):"–"}</td><td>${st}</td></tr>`});
- const vn=ST.filter(x=>x.m===vm),vd=vn.filter(x=>t.logs.some(g=>g.vt&&ST[g.s]===x)).length,w=waiting(t),can=w!=null&&ST[w].m===vm+1;
-const nav=`<div class="navbar"><button class="gh" data-a="prev" ${vm<=0?"disabled":""}>‹ Previous</button><div class="nv"><b>${MODS[vm].n}</b><span class="mu">${vd}/${vn.length} verified · ${hm(vn.reduce((z,x)=>z+x.mn,0))} planned</span></div><button class="${can?"p":"gh"}" data-a="next" ${!allow("work")||!(vm<sm||can)?"disabled":""}>${can?"Start "+mshort(w)+" ›":"Next ›"}</button></div>${vm===sm&&vm+1<MODS.length&&!can?`<div class="mu" style="margin-top:8px;text-align:right">The next module unlocks once this one is fully verified.</div>`:""}`;
+  const l=cur(t),[s,c]=status(t),[vm,sm]=vmod(t);
+  const timeline=MODS.map((module,mi)=>{
+   const steps=ST.map((step,i)=>({step,index:i})).filter(item=>item.step.m===mi);
+   const completed=steps.filter(item=>t.logs.some(g=>g.s===item.index&&g.c)).length;
+   const first=t.logs.find(g=>ST[g.s]&&ST[g.s].m===mi);
+   const entries=steps.map(({step:x,index:i})=>{
+    const g=t.logs.find(q=>q.s===i)||(l&&l._pending&&l.s===i?l:null);
+    const state=!g?["Locked","s-locked"]:g.c?["Completed","s-done"]:g.st?["In progress","s-prog"]:["Assigned","s-asg"];
+    const attachment=g&&g.pdf
+     ?`<div class="wt-file"><span class="pdf-ico">PDF</span><div><b>Uploaded presentation</b><div class="mu">${pdfLink(t,g)} · ${g.pdf.sz?pdfSize(g.pdf.sz):"Size unavailable"} · uploaded ${fmt(g.pdf.at)}</div></div></div>`
+     :g&&needsPdf(x)?'<div class="wt-missing">Presentation PDF not uploaded</div>':"";
+    const watch=g&&x.t==="VIDEO"&&vfolder(biz(t),i)?`<button type="button" class="sm" data-a="watchstep" data-s="${i}">▶ Watch video</button>`:"";
+    return `<article class="wt-item ${g?"":"is-locked"}"><div class="wt-node ${state[1]}" aria-hidden="true">${g&&g.c?"✓":i+1}</div><div class="wt-entry">
+     <div class="wt-heading"><span class="chip wt-type">${x.t}</span><span class="chip ${state[1]}">${state[0]}</span></div>
+     <h3 class="wt-title">${esc(x.n)}</h3><div class="mu">Planned ${x.d} · Monitored by ${esc(x.by)}</div>
+     <div class="wt-meta"><span><b>Assigned</b> ${g?fmt(g.a):"–"}</span><span><b>Started</b> ${g?fmt(g.st):"–"}</span><span><b>Completed</b> ${g?fmt(g.c):"–"}</span><span><b>Time taken</b> ${g?took(g.st||g.a,g.c):"–"}</span></div>
+     ${attachment}${watch}</div></article>`;
+   }).join("");
+   return `<section class="wt-module"><header class="wt-module-head"><b>${module.n}</b><span class="mu">${completed}/${steps.length} completed · ${first?"Started "+fmt(first.a):"Not started"}</span></header><div class="wt-list">${entries}</div></section>`;
+  }).join("");
+ const vn=ST.filter(x=>x.m===vm),vd=vn.filter(x=>t.logs.some(g=>g.c&&ST[g.s]===x)).length,w=waiting(t),can=w!=null&&ST[w].m===vm+1;
+const nav=`<div class="navbar"><button class="gh" data-a="prev" ${vm<=0?"disabled":""}>‹ Previous</button><div class="nv"><b>${MODS[vm].n}</b><span class="mu">${vd}/${vn.length} completed · ${hm(vn.reduce((z,x)=>z+x.mn,0))} planned</span></div><button class="${can?"p":"gh"}" data-a="next" ${!allow("work")||!(vm<sm||can)?"disabled":""}>${can?"Start "+mshort(w)+" ›":"Next ›"}</button></div>${vm===sm&&vm+1<MODS.length&&!can?`<div class="mu" style="margin-top:8px;text-align:right">The next module unlocks when this one is complete.</div>`:""}`;
  let act="";
  if(l){
   const x=ST[l.s];
-  const activity=l.c
-   ?`<div class="mu" style="margin-bottom:8px">Completed ${fmt(l.c)}.${l.pdf?` Presentation: ${pdfLink(t,l)}.`:""} ${l.s+1<ST.length&&ST[l.s+1].m!==x.m?"This is the last step of the module; the next module starts only when you press Start.":"Verification will assign the next step."}</div>`
-   :l.st
-    ?`<div class="mu" style="margin-bottom:8px">Assigned ${fmt(l.st)}</div>`
-    :`<div class="mu" style="margin-bottom:8px">Assigned but not started. Time is counted only from when you press Start.</div>`;
-  const actions=l.c
-   ?allow("verify")
-    ?`<div class="row"><input id="vb" value="${esc(S.user.full_name||"")}" placeholder="Verified by (${esc(x.by)} – name)"><button class="p" data-a="ver">Verify &amp; assign next</button></div>`
-    :'<div class="mu">Waiting for a verifier to review this step.</div>'
-   :l.st
-    ?(allow("work")&&needsPdf(x)?pdfUi(t,l)+(l.pdf?"":`<div class="mu" style="margin-bottom:8px">Upload your presentation (PDF) to enable completion.</div>`):"")+(allow("work")?`<button class="p" data-a="cmp" ${needsPdf(x)&&!l.pdf?"disabled":""}>Mark completed now</button>`:"")
-    :allow("work")?'<button class="p" data-a="go">▶ Start task</button>':"";
+  const activity=l.st
+   ?`<div class="mu" style="margin-bottom:8px">Started ${fmt(l.st)}</div>`
+   :`<div class="mu" style="margin-bottom:8px">Assigned ${fmt(l.a)}. Time is counted only from when you press Start.</div>`;
+  const actions=l.st
+   ?(allow("work")&&needsPdf(x)?pdfUi(t,l)+(l.pdf?"":`<div class="mu" style="margin-bottom:8px">Upload your presentation (PDF) to enable completion.</div>`):"")+(allow("work")?`<button class="p" data-a="cmp" ${needsPdf(x)&&!l.pdf?"disabled":""}>Mark completed now</button>`:"")
+   :allow("work")?'<button class="p" data-a="go">▶ Start task</button>':"";
   act=`<div class="card cur"><div class="mu">Current · Step ${l.s+1} of ${ST.length} · ${MODS[x.m].n}</div>
  <h2 style="margin-top:4px"><span class="chip">${x.t}</span> ${esc(x.n)}</h2>
  <div class="mu">Duration ${x.d} · Monitored by ${x.by}</div>${x.t==="VIDEO"&&vfolder(biz(t),l.s)?`<div style="margin-top:10px"><button type="button" class="sm gh" data-a="watchstep" data-s="${l.s}">▶ Watch this video</button></div>`:""}
- <div style="margin-top:10px">${activity}${actions}</div></div></div>`;
+ <div style="margin-top:10px">${activity}${actions}</div></div>`;
  }
- else if(waiting(t)!=null){const w=waiting(t),y=ST[w];act=`<div class="card cur"><div class="mu">${MODS[ST[w-1].m].n} finished and verified</div><h2 style="margin-top:4px">Next: ${MODS[y.m].n}</h2><div class="mu" style="margin-bottom:10px">First step: ${esc(y.n)} (${y.d}). Time is counted only from when you press Start.</div>${allow("work")?`<button class="p" data-a="start">▶ Start ${mshort(w)}</button>`:""}</div>`}
- else act=`<div class="card cur ok"><b>All ${ST.length} steps completed and verified 🎉</b></div>`;
+ else if(waiting(t)!=null){const w=waiting(t),y=ST[w],moduleChanged=ST[w-1].m!==y.m;act=`<div class="card cur"><div class="mu">${moduleChanged?MODS[ST[w-1].m].n+" completed":"Previous task completed"}</div><h2 style="margin-top:4px">Next: ${moduleChanged?MODS[y.m].n:esc(y.n)}</h2><div class="mu" style="margin-bottom:10px">${moduleChanged?"First task: ":""}${esc(y.n)} (${y.d}). Start when you’re ready.</div>${allow("work")?`<button class="p" data-a="start">▶ Start ${moduleChanged?mshort(w):"task"}</button>`:""}</div>`}
+ else act=`<div class="card cur ok"><b>All ${ST.length} tasks completed 🎉</b></div>`;
  return `<div class="card"><div class="sp"><h1>${esc(t.name)}</h1><span class="chip ${c}">${s}</span></div>
- <div class="dg">${info(t).map(x=>`<div><span class="mu">${x[0]}</span><b>${x[1]}</b></div>`).join("")}</div>${seg(t)}<div class="mu">${done(t)}/${ST.length} verified · Videos done: ${hm(t.logs.filter(l=>l.vt&&ST[l.s].t==="VIDEO").reduce((a,l)=>a+ST[l.s].min,0))} of ${hm(VT)}</div></div>
- ${act}${tiles(t)}<div class="card"><h2>Workflow log</h2><div class="sc"><table><tr><th>#</th><th>Type</th><th>Task</th><th>Planned</th><th>Monitor</th><th>Assigned</th><th>Completed</th><th>Verified by</th><th>Time taken</th><th>Status</th></tr>${rows}</table></div>${nav}</div>`;
+ <div class="dg">${info(t).map(x=>`<div><span class="mu">${x[0]}</span><b>${x[1]}</b></div>`).join("")}</div>${seg(t)}<div class="mu">${done(t)}/${ST.length} tasks completed · Videos done: ${hm(t.logs.filter(l=>l.c&&ST[l.s].t==="VIDEO").reduce((a,l)=>a+ST[l.s].min,0))} of ${hm(VT)}</div></div>
+ ${act}${tiles(t)}<div class="card"><h2>Task timeline</h2><p class="mu">Tasks are shown in order. Any presentation PDF uploaded for a task appears on its card.</p>${timeline}${nav}</div>`;
 }
 
 // ---- Actions
@@ -576,7 +614,7 @@ document.addEventListener("click",e=>{
  if(a==="password-toggle"){const input=document.getElementById(b.dataset.target);if(!input)return;const visible=input.type==="password";input.type=visible?"text":"password";b.setAttribute("aria-label",visible?"Hide password":"Show password");b.title=visible?"Hide password":"Show password";b.innerHTML=visible?EYE_OFF:EYE;return}
  if(a==="logout")return logout();
  if(["cmp","go","start","next"].includes(a)&&!allow("work"))return;
- const NEED={addopen:"add",add:"add",del:"del",ename:"ename",esave:"ename",uploadopen:"upload",hyremove:"hier",ver:"verify",score:"score",msave:"score",csv:"csv"};
+ const NEED={addopen:"add",add:"add",accountopen:"add",accountset:"add",del:"del",ename:"ename",esave:"ename",uploadopen:"upload",hyremove:"hier",score:"score",msave:"score",csv:"csv"};
  if(a.startsWith("permissions-")&&S.user.role!=="developer")return;
  if(a.startsWith("org")&&!canManageOrganization())return;
  if(a==="category-create")return createAddCategory(b.dataset.entity);
@@ -594,6 +632,7 @@ document.addEventListener("click",e=>{
  }
  if(a.startsWith("map")&&!allow("map"))return;
  if(NEED[a]&&(NEED[a]==="add"?!canAddTrainee():!allow(NEED[a])))return;
+ if(a==="accountset")return setTraineeLogin(t);
  if(a==="open"){const o=S.t.find(x=>x.id===b.dataset.id);if(!o||!inScope(o))return}
  if(a==="openbiz"&&!vbiz().includes(b.dataset.b))return;
  if(a==="allbiz"&&oneBiz())return;
@@ -601,9 +640,10 @@ document.addEventListener("click",e=>{
  if(a.startsWith("map")){return mapAction(a,b)}
  if(a==="hyremove")return hierRemove(b.dataset.b);
  if(a==="add"){const n=document.getElementById("nm").value.trim();if(!n)return document.getElementById("nm").focus();
+  const password=document.getElementById("tp").value;if(password.length<6){S.addmsg="Password must be at least 6 characters.";document.getElementById("add-error").textContent=S.addmsg;return}
   const d=now(),g=i=>document.getElementById(i).value.trim(),business=g("bz"),department=g("dp"),branch=g("br"),designation=g("ds");
   if(!vbiz().includes(business)||!addDepts().some(x=>sameName(x.name,department))||!addBranches(business).some(x=>sameName(x.name,branch))||!addDesignations().some(x=>sameName(x.title,designation))){S.addmsg="Choose an available business, branch, department, and designation.";render();return}
-  S.t.push({id:crypto.randomUUID(),biz:business,name:n,dept:department,branch:branch,desg:designation,join:g("jd"),sal:g("sl"),wage:g("wg"),start:d,logs:[{s:0,a:d}]});S.add=false;S.addmsg=""}
+  S.t.push({id:crypto.randomUUID(),biz:business,name:n,dept:department,branch,desg:designation,join:g("jd"),sal:g("sl"),wage:g("wg"),start:d,logs:[{s:0,a:d}],account_password:password});S.add=false;S.addDraft=null;S.addmsg=""}
  else if(a==="nav-dashboard"){S.nav="dashboard";S.view="overview";S.bv="overview";S.q=""}
  else if(a==="nav-trainees"){S.nav="trainees";S.view="overview";S.bv="overview";S.q=""}
  else if(a==="nav-businesses"){S.nav="businesses";S.view="overview";S.bv="overview";S.q=""}
@@ -612,15 +652,15 @@ document.addEventListener("click",e=>{
  else  if(a==="open"){S.sel=b.dataset.id;S.vm=null;S.modal=null;S.edit=false}
  else if(a==="back"){S.sel=null;S.modal=null;S.edit=false}
  else if(a==="del"){if(!confirm("Remove this trainee and all their records?"))return;S.t=S.t.filter(x=>x.id!==b.dataset.id);S.sel=null}
- else if(a==="cmp"){const l=cur(t);if(needsPdf(ST[l.s])&&!l.pdf)return;l.c=now()}
- else if(a==="ver"){const v=document.getElementById("vb").value.trim();if(!v)return document.getElementById("vb").focus();
-  const l=cur(t),d=now();l.v=v;l.vt=d;if(l.s+1<ST.length&&ST[l.s+1].m===ST[l.s].m)t.logs.push({s:l.s+1,a:d});else if(modDone(t,ST[l.s].m)&&modScore(t,ST[l.s].m)==null&&allow("score"))S.modal=ST[l.s].m}
+ else if(a==="cmp"){const l=cur(t);if(needsPdf(ST[l.s])&&!l.pdf)return;l.c=now();if(l.s+1<ST.length)t.logs.push({s:l.s+1,a:now()})}
  else if(a==="start"){if(waiting(t)!=null){const d=now();t.logs.push({s:waiting(t),a:d,st:d});S.vm=null}}
- else if(a==="go"){const l=cur(t);if(l&&!l.st)l.st=now()}
+ else if(a==="go"){const l=cur(t);if(l&&l._pending){const d=now();t.logs.push({s:l.s,a:l.a||d,st:d})}else if(l&&!l.st)l.st=now()}
  else if(a==="prev"){S.vm=vmod(t)[0]-1}
  else if(a==="next"){const[v,m]=vmod(t);if(v<m)S.vm=v+1;else if(waiting(t)!=null&&ST[waiting(t)].m===v+1){const d=now();t.logs.push({s:waiting(t),a:d,st:d});S.vm=null}}
  else if(a==="score"){S.modal=+b.dataset.mi}
- else  if(a==="addopen"){S.add=true;S.addmsg="";S.addDraft={name:"",date:new Date().toISOString().slice(0,10),salary:"",wage:""};S.addBiz=S.view!=="overview"?S.view:(vbiz()[0]||"");S.addBranch=(addBranches(S.addBiz)[0]||{}).name||"";S.addDept=(addDepts()[0]||{}).name||"";S.addDesg=(addDesignations()[0]||{}).title||""}
+ else if(a==="addopen"){S.add=true;S.addmsg="";S.addDraft={name:"",password:"",date:new Date().toISOString().slice(0,10),salary:"",wage:""};S.addBiz=S.view!=="overview"?S.view:(vbiz()[0]||"");S.addBranch=(addBranches(S.addBiz)[0]||{}).name||"";S.addDept=(addDepts()[0]||{}).name||"";S.addDesg=(addDesignations()[0]||{}).title||""}
+ else if(a==="accountopen"){S.accountModal=true;S.accountDone=false;S.accountMsg=""}
+ else if(a==="accountcancel"){S.accountModal=false;S.accountDone=false;S.accountMsg=""}
  else if(a==="settings-open"){S.settings=true}
  else if(a==="settings-close"){S.settings=false}
  else if(a==="permissions-open"){S.settings=false;S.permissions=true;S.permissionDraft=copyPermissions(ROLE_PERMS);S.permissionMsg=""}
@@ -637,14 +677,14 @@ document.addEventListener("click",e=>{
  else if(a==="videoopen"){S.add=false;S.edit=false;S.modal=null;S.upload=false;S.video=true}
  else if(a==="videocancel"){stopVideoPlayer();S.video=false;S.vpre=""}
  else if(a==="watchstep"){const st=+b.dataset.s,f=t?vfolder(biz(t),st):"";if(!f)return;S.add=false;S.edit=false;S.modal=null;S.upload=false;S.map=false;S.vpre=f;S.video=true}
- else if(a==="mcancel"){S.modal=null;S.edit=false;S.add=false}
+ else if(a==="mcancel"){S.modal=null;S.edit=false;S.add=false;S.addDraft=null}
  else if(a==="ename"){S.edit=true}
  else if(a==="esave"){const el=document.getElementById("en-nm"),n=el.value.trim();if(!n)return el.focus();t.name=n;S.edit=false}
  else if(a==="msave"){const el=document.getElementById("ms-sc"),n=+el.value;if(el.value.trim()===""||!Number.isFinite(n))return el.focus();
   t.scores=t.scores||{};t.scores[S.modal]={sc:Math.max(0,Math.min(MAXSC,n)),rm:document.getElementById("ms-rm").value.trim()};S.modal=null}
  else if(a==="theme")return toggleTheme();
  else if(a==="csv")return csv();
- if(["add","del","cmp","ver","start","go","next","esave","msave"].includes(a))save();
+ if(["add","del","cmp","start","go","next","esave","msave"].includes(a))save();
  render();
  if(a==="uploadopen")loadParentFolders();
  if(a==="videoopen")loadVideoFolders();
@@ -956,14 +996,14 @@ document.addEventListener("change",e=>{
 });
 
 function csv(){
- const r=[["Trainee","Business","Branch","Department","Designation","Joining date","Salary","Wage","Step","Module","Type","Task","Monitored by","Assigned","Completed","Verified by","Verified at"]];
- scoped().forEach(t=>t.logs.forEach(g=>{const x=ST[g.s];r.push([t.name,biz(t),t.branch||"",t.dept,t.desg||"",t.join||"",allow("salary")?(t.sal||""):"",allow("salary")?(t.wage||""):"",g.s+1,MODS[x.m].n,x.t,x.n,x.by,g.st||"",g.c||"",g.v||"",g.vt||""])}));
+ const r=[["Trainee","Business","Branch","Department","Designation","Joining date","Salary","Wage","Step","Module","Type","Task","Monitored by","Assigned","Started","Completed"]];
+ scoped().forEach(t=>t.logs.forEach(g=>{const x=ST[g.s];r.push([t.name,biz(t),t.branch||"",t.dept,t.desg||"",t.join||"",allow("salary")?(t.sal||""):"",allow("salary")?(t.wage||""):"",g.s+1,MODS[x.m].n,x.t,x.n,x.by,g.a||"",g.st||"",g.c||""])}));
  const s=r.map(a=>a.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(",")).join("\n");
  const u=URL.createObjectURL(new Blob([s],{type:"text/csv"})),a=document.createElement("a");a.href=u;a.download="trainee-log.csv";a.click();
 }
 document.addEventListener("keydown",e=>{
  if((e.key==="Enter"||e.key===" ")&&e.target.classList&&(e.target.classList.contains("bz")||e.target.classList.contains("hy-t"))){e.preventDefault();e.target.click();return}
- if(e.key==="Escape"&&(S.modal!=null||S.edit||S.add||S.upload||S.video||S.map||S.settings||S.organization||S.permissions)){stopVideoPlayer();stopVideoPlayer("map-player");S.modal=null;S.edit=false;S.add=false;S.upload=false;S.video=false;S.map=false;S.settings=false;S.organization=false;S.permissions=false;S.permissionDraft=null;S.mplay="";render()}
+ if(e.key==="Escape"&&(S.modal!=null||S.edit||S.add||S.upload||S.video||S.map||S.settings||S.organization||S.permissions)){stopVideoPlayer();stopVideoPlayer("map-player");S.modal=null;S.edit=false;S.add=false;S.addDraft=null;S.upload=false;S.video=false;S.map=false;S.settings=false;S.organization=false;S.permissions=false;S.permissionDraft=null;S.mplay="";render()}
  else if(e.key==="Enter"&&S.add&&e.target.id.startsWith("add-category-name-")){const entity=e.target.id.slice("add-category-name-".length),b=document.querySelector(`[data-a="category-create"][data-entity="${entity}"]`);if(b)b.click()}
  else if(e.key==="Enter"&&S.add&&e.target.tagName==="INPUT"){const b=document.querySelector('[data-a="add"]');if(b)b.click()}
  else if(e.key==="Enter"&&e.target.id==="en-nm"){const b=document.querySelector('[data-a="esave"]');if(b)b.click()}

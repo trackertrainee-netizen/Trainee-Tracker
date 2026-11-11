@@ -101,6 +101,28 @@ tr.mod td{background:linear-gradient(135deg,var(--ink),var(--navy));color:#fff;f
 tr.mod .mu,tr.mod .lk{color:rgba(255,255,255,.68);font-weight:500}
 tr.lkd td{color:var(--lk)}
 
+/* ---- Trainee task timeline */
+.wt-module+.wt-module{margin-top:1.5rem;padding-top:1.125rem;border-top:1px solid var(--bd)}
+.wt-module-head{display:flex;justify-content:space-between;align-items:baseline;gap:.75rem;flex-wrap:wrap;margin-bottom:.75rem}
+.wt-module-head>b{font-family:var(--serif);font-size:1.125rem;font-weight:600}
+.wt-list{display:flex;flex-direction:column}
+.wt-item{display:grid;grid-template-columns:2rem minmax(0,1fr);gap:.75rem;position:relative;padding-bottom:1rem}
+.wt-item:not(:last-child)::before{content:"";position:absolute;z-index:0;left:.9375rem;top:1.875rem;bottom:-.9375rem;width:2px;background:var(--bd2)}
+.wt-node{z-index:1;display:grid;place-items:center;width:2rem;height:2rem;border:2px solid currentColor;border-radius:50%;background:var(--card);font-size:.6875rem;font-weight:700;font-variant-numeric:tabular-nums}
+.wt-node.s-done{color:var(--c-done)}.wt-node.s-prog{color:var(--c-prog)}.wt-node.s-asg{color:var(--c-asg)}.wt-node.s-locked{color:var(--lk)}
+.wt-entry{min-width:0;padding:.875rem 1rem;border:1px solid var(--bd);border-radius:.875rem;background:var(--card)}
+.wt-item:not(.is-locked) .wt-entry{border-left:3px solid var(--gold)}
+.wt-item.is-locked .wt-entry{opacity:.78}
+.wt-heading{display:flex;justify-content:space-between;align-items:center;gap:.5rem;flex-wrap:wrap}
+.wt-type{color:var(--mu)}
+.wt-title{margin:.5rem 0 .25rem;font-family:var(--serif);font-size:1.0625rem;line-height:1.35;font-weight:600}
+.wt-meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));gap:.375rem .75rem;margin-top:.75rem;font-size:.75rem;color:var(--mu)}
+.wt-meta b{color:var(--tx);font-weight:600}
+.wt-file{display:flex;align-items:center;gap:.75rem;margin-top:.75rem;padding:.625rem .75rem;border:1px solid var(--bd);border-radius:.75rem}
+.wt-file>div{min-width:0}.wt-file .pdf-link{display:inline-block;margin-top:.125rem}
+.wt-missing{margin-top:.75rem;color:var(--wa);font-size:.8125rem;font-weight:600}
+.wt-entry>button{margin-top:.75rem}
+
 /* ---- Pop-up windows */
 .ov{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;padding:1.125rem}
 .ov .bd{position:absolute;inset:0;background:rgba(6,12,20,.6);backdrop-filter:blur(0.1875rem)}

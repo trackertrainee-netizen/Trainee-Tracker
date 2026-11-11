@@ -60,7 +60,6 @@ const PERM_LABELS = {
   upload: "Upload video",
   map: "Map videos",
   hier: "Manage hierarchy images",
-  verify: "Verify training steps",
   score: "Manage module scores",
   csv: "Export CSV",
   salary: "View salary and wage",
@@ -70,8 +69,8 @@ const PERM_LABELS = {
 
 // 1 = allowed, 0 = hidden in the interface. Database access is enforced by RLS.
 const ROLE_PERMS = {
-  developer:     { add:1, del:1, ename:1, upload:1, map:1, hier:1, verify:1, score:1, csv:1, salary:1, watch:1, work:0 },
-  business:      { add:1, del:1, ename:1, upload:0, map:0, hier:1, verify:1, score:1, csv:1, salary:1, watch:1, work:0 },
-  business_view: { add:0, del:0, ename:0, upload:0, map:0, hier:0, verify:0, score:0, csv:1, salary:0, watch:1, work:0 },
-  trainee:       { add:0, del:0, ename:0, upload:0, map:0, hier:0, verify:0, score:0, csv:0, salary:0, watch:1, work:1 }
+  developer:     { add:1, del:1, ename:1, upload:1, map:1, hier:1, score:1, csv:1, salary:1, watch:1, work:0 },
+  business:      { add:1, del:1, ename:1, upload:0, map:0, hier:1, score:1, csv:1, salary:1, watch:1, work:0 },
+  business_view: { add:0, del:0, ename:0, upload:0, map:0, hier:0, score:0, csv:1, salary:0, watch:1, work:0 },
+  trainee:       { add:0, del:0, ename:0, upload:0, map:0, hier:0, score:0, csv:0, salary:0, watch:1, work:1 }
 };

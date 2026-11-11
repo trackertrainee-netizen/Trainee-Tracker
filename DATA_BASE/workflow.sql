@@ -99,6 +99,52 @@ create index if not exists idx_training_steps_module
 create index if not exists idx_trainee_progress_step
   on public.trainee_progress (step_index);
 
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('presentations', 'presentations', false, 26214400, array['application/pdf'])
+on conflict (id) do update
+set public = false,
+    file_size_limit = excluded.file_size_limit,
+    allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "presentation files read in scope" on storage.objects;
+create policy "presentation files read in scope" on storage.objects
+  for select to authenticated
+  using (
+    bucket_id = 'presentations'
+    and exists (
+      select 1
+      from public.trainees t
+      join public.designations g on g.id = t.designation_id
+      join public.departments d on d.id = g.department_id
+      join public.branches b on b.id = d.branch_id
+      where t.id::text = (storage.foldername(objects.name))[2]
+        and (
+          public.auth_trainee_id() = t.id
+          or public.in_scope(b.business_id, b.id, d.id)
+        )
+    )
+  );
+
+drop policy if exists "presentation files upload own" on storage.objects;
+create policy "presentation files upload own" on storage.objects
+  for insert to authenticated
+  with check (
+    bucket_id = 'presentations'
+    and (storage.foldername(objects.name))[2] = public.auth_trainee_id()::text
+  );
+
+drop policy if exists "presentation files replace own" on storage.objects;
+create policy "presentation files replace own" on storage.objects
+  for update to authenticated
+  using (
+    bucket_id = 'presentations'
+    and (storage.foldername(objects.name))[2] = public.auth_trainee_id()::text
+  )
+  with check (
+    bucket_id = 'presentations'
+    and (storage.foldername(objects.name))[2] = public.auth_trainee_id()::text
+  );
+
 alter table public.training_modules enable row level security;
 alter table public.training_steps enable row level security;
 alter table public.trainee_progress enable row level security;
@@ -139,6 +185,36 @@ drop policy if exists "training steps read" on public.training_steps;
 create policy "training steps read" on public.training_steps
   for select to authenticated using (true);
 
+create or replace function public.can_edit_trainee_progress(p_trainee_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select exists (
+    select 1
+    from public.profiles profile
+    join public.trainees t on t.id = p_trainee_id
+    join public.designations g on g.id = t.designation_id
+    join public.departments d on d.id = g.department_id
+    join public.branches b on b.id = d.branch_id
+    where profile.id = auth.uid()
+      and (
+        profile.role = 'developer'
+        or (
+          profile.role = 'business'
+          and profile.business_id = b.business_id
+          and (profile.branch_id is null or profile.branch_id = b.id)
+          and (profile.department_id is null or profile.department_id = d.id)
+        )
+      )
+  );
+$$;
+
+revoke all on function public.can_edit_trainee_progress(uuid) from public;
+grant execute on function public.can_edit_trainee_progress(uuid) to authenticated;
+
 drop policy if exists "trainee progress read in scope" on public.trainee_progress;
 create policy "trainee progress read in scope" on public.trainee_progress
   for select to authenticated
@@ -158,64 +234,57 @@ create policy "trainee progress read in scope" on public.trainee_progress
 drop policy if exists "trainee progress editor insert" on public.trainee_progress;
 create policy "trainee progress editor insert" on public.trainee_progress
   for insert to authenticated
-  with check (
-    exists (
+  with check (public.can_edit_trainee_progress(trainee_id));
+
+create or replace function public.can_trainee_insert_progress(
+  p_trainee_id uuid,
+  p_step_index smallint
+)
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if public.auth_trainee_id() is distinct from p_trainee_id then
+    return false;
+  end if;
+
+  return (
+    p_step_index = 0
+    and not exists (
       select 1
-      from public.trainees t
-      join public.designations g on g.id = t.designation_id
-      join public.departments d on d.id = g.department_id
-      join public.branches b on b.id = d.branch_id
-      where t.id = trainee_progress.trainee_id
-        and public.can_edit_scope(b.business_id, b.id, d.id)
+      from public.trainee_progress p
+      where p.trainee_id = p_trainee_id
     )
+  ) or exists (
+    select 1
+    from public.trainee_progress p
+    where p.trainee_id = p_trainee_id
+      and p.step_index = p_step_index - 1
+      and p.completed_at is not null
   );
+end;
+$$;
+
+revoke all on function public.can_trainee_insert_progress(uuid, smallint) from public;
+grant execute on function public.can_trainee_insert_progress(uuid, smallint) to authenticated;
 
 drop policy if exists "trainee progress self insert next" on public.trainee_progress;
 create policy "trainee progress self insert next" on public.trainee_progress
   for insert to authenticated
   with check (
-    public.auth_trainee_id() = trainee_id
+    public.can_trainee_insert_progress(trainee_progress.trainee_id, trainee_progress.step_index)
     and verified_by is null
     and verified_at is null
-    and (
-      (step_index = 0 and not exists (
-        select 1 from public.trainee_progress p
-        where p.trainee_id = trainee_progress.trainee_id
-      ))
-      or exists (
-        select 1 from public.trainee_progress p
-        where p.trainee_id = trainee_progress.trainee_id
-          and p.step_index = trainee_progress.step_index - 1
-          and p.verified_at is not null
-      )
-    )
   );
 
 drop policy if exists "trainee progress editor update" on public.trainee_progress;
 create policy "trainee progress editor update" on public.trainee_progress
   for update to authenticated
-  using (
-    exists (
-      select 1
-      from public.trainees t
-      join public.designations g on g.id = t.designation_id
-      join public.departments d on d.id = g.department_id
-      join public.branches b on b.id = d.branch_id
-      where t.id = trainee_progress.trainee_id
-        and public.can_edit_scope(b.business_id, b.id, d.id)
-    )
-  )
-  with check (
-    exists (
-      select 1
-      from public.trainees t
-      join public.designations g on g.id = t.designation_id
-      join public.departments d on d.id = g.department_id
-      join public.branches b on b.id = d.branch_id
-      where t.id = trainee_progress.trainee_id
-        and public.can_edit_scope(b.business_id, b.id, d.id)
-    )
-  );
+  using (public.can_edit_trainee_progress(trainee_id))
+  with check (public.can_edit_trainee_progress(trainee_id));
 
 drop policy if exists "trainee progress self update" on public.trainee_progress;
 create policy "trainee progress self update" on public.trainee_progress
@@ -226,17 +295,7 @@ create policy "trainee progress self update" on public.trainee_progress
 drop policy if exists "trainee progress editor delete" on public.trainee_progress;
 create policy "trainee progress editor delete" on public.trainee_progress
   for delete to authenticated
-  using (
-    exists (
-      select 1
-      from public.trainees t
-      join public.designations g on g.id = t.designation_id
-      join public.departments d on d.id = g.department_id
-      join public.branches b on b.id = d.branch_id
-      where t.id = trainee_progress.trainee_id
-        and public.can_edit_scope(b.business_id, b.id, d.id)
-    )
-  );
+  using (public.can_edit_trainee_progress(trainee_id));
 
 create or replace function public.guard_trainee_progress()
 returns trigger
@@ -251,9 +310,9 @@ begin
       from public.trainee_progress p
       where p.trainee_id = new.trainee_id
         and p.step_index = new.step_index - 1
-        and p.verified_at is not null
+        and p.completed_at is not null
     ) then
-      raise exception 'The previous step must be verified before assignment';
+      raise exception 'The previous step must be completed before assignment';
     end if;
     if public.auth_role() = 'trainee' then
       if new.verified_by is not null or new.verified_at is not null then
@@ -357,7 +416,7 @@ create policy "trainee scores editor write" on public.trainee_module_scores
           select 1 from public.trainee_progress p
           where p.trainee_id = trainee_module_scores.trainee_id
             and p.step_index = s.step_index
-            and p.verified_at is not null
+            and p.completed_at is not null
         )
     )
   );
@@ -380,10 +439,10 @@ begin
         select 1 from public.trainee_progress p
         where p.trainee_id = new.trainee_id
           and p.step_index = s.step_index
-          and p.verified_at is not null
+        and p.completed_at is not null
       )
   ) then
-    raise exception 'Every step in the module must be verified before scoring';
+  raise exception 'Every step in the module must be completed before scoring';
   end if;
   new.updated_at := now();
   return new;

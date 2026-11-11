@@ -3,7 +3,6 @@ import os
 import re
 import subprocess
 import tempfile
-import uuid
 
 import boto3
 from dotenv import load_dotenv
@@ -15,7 +14,6 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 BUCKET_NAME = os.getenv("BUCKET_NAME")
 ACCOUNT_ID = os.getenv("ACCOUNT_ID")
 
-PRESENTATION_PREFIX = "presentations"
 MAX_PRESENTATION_BYTES = 25 * 1024 * 1024
 HIERARCHY_PREFIX = "hierarchy"
 
@@ -102,24 +100,6 @@ def create_parent_folder(folder_name):
         Key=f"{folder_name}/",
         Body=b"",
     )
-
-
-def presentation_key(trainee_id, step):
-    return f"{PRESENTATION_PREFIX}/{uuid.UUID(str(trainee_id))}/{int(step)}.pdf"
-
-
-def upload_presentation_pdf(trainee_id, step, data):
-    """Store a trainee's presentation PDF in the R2 bucket (replaces any earlier one)."""
-    _get_s3_client().put_object(
-        Bucket=BUCKET_NAME,
-        Key=presentation_key(trainee_id, step),
-        Body=data,
-        ContentType="application/pdf",
-    )
-
-
-def get_presentation_object(trainee_id, step):
-    return _get_s3_client().get_object(Bucket=BUCKET_NAME, Key=presentation_key(trainee_id, step))
 
 
 def upload_hierarchy_image(slug, data, content_type):

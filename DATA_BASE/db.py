@@ -1,17 +1,161 @@
 """Supabase queries for the existing organization and trainee workflow schema."""
 
+import hashlib
+import os
 from uuid import UUID
 
-from supabase import create_client
+from postgrest.exceptions import APIError
+from supabase import AuthApiError, create_client
+from supabase.lib.client_options import SyncClientOptions
+
+
+def trainee_auth_email(username):
+    normalized = " ".join(username.strip().split()).casefold()
+    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:56]
+    return f"trainee-{digest}@trainee-tracker.invalid"
 
 
 class DataBase:
     def __init__(self, url, api_key, access_token=None):
         if not url or not api_key:
             raise RuntimeError("Set SUPABASE_URL and SUPABASE_KEY in the existing .env file.")
-        self.client = create_client(url, api_key)
+        self.url = url
+        options = (
+            SyncClientOptions(headers={"Authorization": f"Bearer {access_token}"})
+            if access_token
+            else None
+        )
+        self.client = create_client(url, api_key, options=options)
         if access_token:
             self.client.postgrest.auth(access_token)
+
+    def _auth_admin_client(self):
+        service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+        if not service_key:
+            raise RuntimeError(
+                "Set SUPABASE_SERVICE_ROLE_KEY in the server .env file to create trainee login accounts."
+            )
+        return create_client(self.url, service_key)
+
+    def _create_auth_user(self, admin, name, password):
+        normalized_name = " ".join(name.split()).casefold()
+        if "@" in name or normalized_name == "developer":
+            raise ValueError("Choose a trainee name that is not an email or the reserved username 'developer'.")
+        try:
+            return admin.auth.admin.create_user({
+                "email": trainee_auth_email(name),
+                "password": password,
+                "email_confirm": True,
+                "user_metadata": {"username": name, "full_name": name},
+            }).user
+        except AuthApiError as exc:
+            code = getattr(exc.code, "value", exc.code)
+            if code in ("email_exists", "user_already_exists"):
+                raise ValueError(
+                    "That trainee name is already in use as a username. Use a unique name."
+                ) from None
+            raise
+
+    def _create_trainee_account(self, admin, trainee_id, payload, password):
+        name = payload["name"]
+        auth_user = self._create_auth_user(admin, name, password)
+
+        trainee_inserted = False
+        try:
+            self.client.table("trainees").insert(payload).execute()
+            trainee_inserted = True
+            admin.table("profiles").upsert(
+                {
+                    "id": auth_user.id,
+                    "full_name": name,
+                    "role": "trainee",
+                    "trainee_id": trainee_id,
+                },
+                on_conflict="id",
+            ).execute()
+        except (APIError, AuthApiError) as exc:
+            cleanup_errors = []
+            try:
+                admin.table("profiles").delete().eq("id", auth_user.id).execute()
+            except APIError as cleanup_error:
+                cleanup_errors.append(cleanup_error)
+            try:
+                admin.auth.admin.delete_user(auth_user.id)
+            except AuthApiError as cleanup_error:
+                cleanup_errors.append(cleanup_error)
+            if trainee_inserted:
+                try:
+                    self.client.table("trainees").delete().eq("id", trainee_id).execute()
+                except APIError as cleanup_error:
+                    cleanup_errors.append(cleanup_error)
+            if cleanup_errors:
+                raise RuntimeError(
+                    "Trainee login setup failed and automatic cleanup was incomplete. Check the trainee and Auth records."
+                ) from cleanup_errors[0]
+            raise
+
+    def set_trainee_login(self, trainee_id, password):
+        try:
+            trainee_id = str(UUID(str(trainee_id)))
+        except (ValueError, TypeError, AttributeError):
+            raise ValueError("Choose a valid trainee.") from None
+        if not isinstance(password, str) or len(password) < 6:
+            raise ValueError("Set a login password of at least 6 characters.")
+
+        admin = self._auth_admin_client()
+        trainee = (
+            admin.table("trainees")
+            .select("id,name")
+            .eq("id", trainee_id)
+            .maybe_single()
+            .execute()
+            .data
+        )
+        if not trainee:
+            raise ValueError("Trainee not found.")
+
+        name = trainee["name"].strip()
+        attributes = {
+            "email": trainee_auth_email(name),
+            "password": password,
+            "email_confirm": True,
+            "user_metadata": {"username": name, "full_name": name},
+        }
+        linked_profiles = (
+            admin.table("profiles")
+            .select("id")
+            .eq("trainee_id", trainee_id)
+            .limit(2)
+            .execute()
+            .data
+        )
+        if len(linked_profiles) > 1:
+            raise ValueError("This trainee has multiple linked accounts. Ask an administrator to check the profiles.")
+        if linked_profiles:
+            user_id = linked_profiles[0]["id"]
+            admin.auth.admin.update_user_by_id(user_id, attributes)
+            admin.table("profiles").update({"full_name": name}).eq("id", user_id).execute()
+        else:
+            auth_user = self._create_auth_user(admin, name, password)
+            try:
+                admin.table("profiles").upsert(
+                    {
+                        "id": auth_user.id,
+                        "full_name": name,
+                        "role": "trainee",
+                        "trainee_id": trainee_id,
+                    },
+                    on_conflict="id",
+                ).execute()
+            except (APIError, AuthApiError) as exc:
+                try:
+                    admin.auth.admin.delete_user(auth_user.id)
+                except AuthApiError as cleanup_error:
+                    raise RuntimeError(
+                        "Trainee login setup failed and automatic cleanup was incomplete. Check the Auth account."
+                    ) from cleanup_error
+                raise exc
+        return name
 
     def sign_in(self, email, password):
         return self.client.auth.sign_in_with_password(
@@ -108,8 +252,18 @@ class DataBase:
 
         current = self.client.table("trainee_workflow").select("id").execute().data
         current_ids = {row["id"] for row in current}
+        current_progress = (
+            self.client.table("trainee_progress")
+            .select("trainee_id,step_index")
+            .execute()
+            .data
+        )
+        existing_progress = {
+            (row["trainee_id"], int(row["step_index"])) for row in current_progress
+        }
         incoming_ids = set()
         trainee_role = profile["role"] == "trainee"
+        admin = None
 
         for item in rows:
             trainee_id = item.get("id")
@@ -132,10 +286,16 @@ class DataBase:
             else:
                 if trainee_role:
                     raise ValueError("A trainee account cannot create trainee records.")
+                password = item.get("account_password")
+                if not isinstance(password, str) or len(password) < 6:
+                    raise ValueError("Set a trainee login password of at least 6 characters.")
+                if admin is None:
+                    admin = self._auth_admin_client()
                 payload = self._trainee_fields(item)
                 payload["id"] = trainee_id
                 payload["designation_id"] = self._designation_id(item)
-                self.client.table("trainees").insert(payload).execute()
+                self._create_trainee_account(admin, trainee_id, payload, password)
+                existing_progress.add((trainee_id, 0))
 
             for log in item.get("logs") or []:
                 try:
@@ -152,9 +312,15 @@ class DataBase:
                     "verified_at": log.get("vt"),
                     "presentation": log.get("pdf"),
                 }
-                self.client.table("trainee_progress").upsert(
-                    progress, on_conflict="trainee_id,step_index"
-                ).execute()
+                progress_query = self.client.table("trainee_progress")
+                progress_key = (trainee_id, step_index)
+                if progress_key in existing_progress:
+                    progress_query.update(progress).eq(
+                        "trainee_id", trainee_id
+                    ).eq("step_index", step_index).execute()
+                else:
+                    progress_query.insert(progress).execute()
+                    existing_progress.add(progress_key)
 
             if not trainee_role:
                 for module_index, score in (item.get("scores") or {}).items():

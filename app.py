@@ -13,8 +13,9 @@ from dotenv import load_dotenv
 from flask import Flask, Response, g, jsonify, make_response, request
 from postgrest.exceptions import APIError
 from supabase import AuthApiError
+from storage3.exceptions import StorageException
 
-from DATA_BASE.db import DataBase
+from DATA_BASE.db import DataBase, trainee_auth_email
 
 from CLOUD_FLARE.modules import (
     MAX_PRESENTATION_BYTES,
@@ -22,11 +23,9 @@ from CLOUD_FLARE.modules import (
     delete_hierarchy_object,
     get_hierarchy_object,
     get_parent_folders,
-    get_presentation_object,
     get_video_folders,
     get_video_object,
     upload_hierarchy_image,
-    upload_presentation_pdf,
     upload_video_as_hls,
 )
 
@@ -34,6 +33,7 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE, ".env"))
 VIDEO_MAP_FILE = os.path.join(BASE, "video_map.json")
 HIERARCHY_FILE = os.path.join(BASE, "hierarchy_images.json")
+PRESENTATION_BUCKET = "presentations"
 # Keep in sync with BUSINESSES in static/config.js
 BUSINESSES = ["Magnus", "Alims", "M&D", "Merchx"]
 MAX_HIERARCHY_BYTES = 10 * 1024 * 1024
@@ -226,6 +226,13 @@ def _image_type(data):
     return None
 
 
+def _presentation_key(trainee_name, trainee_id, step):
+    folder_name = trainee_name.strip().replace("/", "-").replace("\\", "-")
+    if not folder_name or folder_name in (".", ".."):
+        raise ValueError("The trainee must have a valid name to store presentations.")
+    return f"{folder_name}/{trainee_id}/{step}.pdf"
+
+
 def _upload_session_path(upload_id):
     try:
         normalized_id = str(uuid.UUID(upload_id))
@@ -385,7 +392,7 @@ def login():
     elif identifier.casefold() == "developer":
         email = DEVELOPER_AUTH_EMAIL
     else:
-        return jsonify(error="Use the developer username or your Supabase Auth email."), 400
+        email = trainee_auth_email(identifier)
     try:
         database = _db()
         auth = database.sign_in(email, password)
@@ -494,6 +501,51 @@ def get_trainees():
         return jsonify(error="Could not load trainees from the database."), 502
 
 
+@app.post("/api/trainees/<trainee_id>/account")
+def set_trainee_login(trainee_id):
+    if g.profile["role"] not in ("developer", "business"):
+        return jsonify(error="Only a developer or business account can set trainee login passwords."), 403
+
+    body = request.get_json(silent=True)
+    password = body.get("password") if isinstance(body, dict) else None
+    try:
+        normalized_id = str(uuid.UUID(trainee_id))
+    except (ValueError, TypeError, AttributeError):
+        return jsonify(error="Choose a valid trainee."), 400
+    if normalized_id != trainee_id:
+        return jsonify(error="Choose a valid trainee."), 400
+
+    try:
+        trainee = next(
+            (row for row in g.database.list_trainees() if row.get("id") == normalized_id),
+            None,
+        )
+        if not trainee:
+            return jsonify(error="Trainee not found or not in your scope."), 404
+        if g.profile["role"] == "business":
+            scope = _profile_payload(g.database, g.profile)
+            for field in ("business", "branch", "department"):
+                allowed = scope.get(field)
+                if allowed and trainee.get({"business": "biz", "branch": "branch", "department": "dept"}[field]) != allowed.get("name"):
+                    return jsonify(error="That trainee is outside your account scope."), 403
+                if field == "business" and not allowed:
+                    return jsonify(error="Your account has no business scope."), 403
+
+        username = g.database.set_trainee_login(normalized_id, password)
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    except RuntimeError as exc:
+        app.logger.error("Trainee account configuration or cleanup error: %s", exc)
+        return jsonify(error=str(exc)), 503
+    except AuthApiError:
+        app.logger.exception("Could not set trainee login in Supabase Auth")
+        return jsonify(error="Could not set the trainee login password."), 502
+    except APIError:
+        app.logger.exception("Could not set trainee login in Supabase")
+        return jsonify(error="Could not set the trainee login password."), 502
+    return jsonify(ok=True, username=username)
+
+
 @app.put("/api/trainees")
 def put_trainees():
     data = request.get_json(silent=True)
@@ -503,6 +555,12 @@ def put_trainees():
         count = g.database.save_trainees(data, g.profile)
     except ValueError as exc:
         return jsonify(error=str(exc)), 400
+    except RuntimeError as exc:
+        app.logger.error("Trainee account configuration or cleanup error: %s", exc)
+        return jsonify(error=str(exc)), 503
+    except AuthApiError:
+        app.logger.exception("Could not create trainee login in Supabase Auth")
+        return jsonify(error="Could not create the trainee login account."), 502
     except APIError as exc:
         app.logger.exception("Could not save trainee workflow to Supabase")
         if getattr(exc, "code", None) == "42501":
@@ -699,7 +757,7 @@ def upload_presentation():
     try:
         trainee = (
             g.database.client.table("trainees")
-            .select("id")
+            .select("id,name")
             .eq("id", trainee_id)
             .maybe_single()
             .execute()
@@ -712,11 +770,15 @@ def upload_presentation():
         return jsonify(error="Trainee not found or not in your scope."), 404
 
     try:
-        upload_presentation_pdf(trainee_id, step, data)
-    except RuntimeError as exc:
-        app.logger.error("Presentation storage configuration error: %s", exc)
-        return jsonify(error=str(exc)), 503
-    except (BotoCoreError, ClientError):
+        key = _presentation_key(trainee["name"], trainee_id, step)
+        g.database.client.storage.from_(PRESENTATION_BUCKET).upload(
+            key,
+            data,
+            file_options={"content-type": "application/pdf", "upsert": "true"},
+        )
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    except StorageException:
         app.logger.exception("Could not store presentation")
         return jsonify(error="Could not save the PDF to storage."), 502
     return jsonify(ok=True, size=len(data))
@@ -733,7 +795,7 @@ def view_presentation(trainee_id, step):
     try:
         trainee = (
             g.database.client.table("trainees")
-            .select("id")
+            .select("id,name")
             .eq("id", trainee_id)
             .maybe_single()
             .execute()
@@ -745,36 +807,26 @@ def view_presentation(trainee_id, step):
     if not trainee:
         return jsonify(error="Trainee not found or not in your scope."), 404
     try:
-        obj = get_presentation_object(trainee_id, step)
-    except ClientError as exc:
-        if exc.response.get("Error", {}).get("Code") in ("NoSuchKey", "404", "NotFound"):
+        key = _presentation_key(trainee["name"], trainee_id, step)
+        data = g.database.client.storage.from_(PRESENTATION_BUCKET).download(key)
+    except StorageException as exc:
+        if str(getattr(exc, "status", "")) == "404":
             return jsonify(error="Presentation not found."), 404
         app.logger.exception("Could not read presentation")
         return jsonify(error="Could not load the PDF from storage."), 502
-    except (BotoCoreError, RuntimeError):
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    except RuntimeError:
         app.logger.exception("Could not read presentation")
         return jsonify(error="Could not load the PDF from storage."), 502
-
-    body = obj["Body"]
-
-    def stream():
-        try:
-            while True:
-                chunk = body.read(64 * 1024)
-                if not chunk:
-                    break
-                yield chunk
-        finally:
-            body.close()
 
     headers = {
         "Content-Disposition": 'inline; filename="presentation.pdf"',
         "Cache-Control": "private, no-cache",
         "X-Content-Type-Options": "nosniff",
     }
-    if "ContentLength" in obj:
-        headers["Content-Length"] = str(obj["ContentLength"])
-    return Response(stream(), mimetype="application/pdf", headers=headers)
+    headers["Content-Length"] = str(len(data))
+    return Response(data, mimetype="application/pdf", headers=headers)
 
 
 @app.get("/api/videos")
