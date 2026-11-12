@@ -177,6 +177,38 @@ def _require_org_manager():
     return None
 
 
+def _require_user_manager():
+    if g.profile["role"] not in ("developer", "business", "business_hr", "business_view"):
+        return jsonify(error="Your account cannot manage users."), 403
+    return None
+
+
+def _service_admin_client():
+    service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+    if not service_key:
+        raise RuntimeError("SUPABASE_SERVICE_ROLE_KEY is not configured on the server.")
+    return create_client(g.database.url, service_key)
+
+
+def _can_manage_staff_profile(profile):
+    manager = g.profile
+    if manager["role"] == "developer":
+        return True
+    if manager["role"] == "business_hr" and not manager.get("business_id"):
+        return True
+    if profile.get("business_id") != manager.get("business_id"):
+        return False
+    if manager.get("branch_id") and profile.get("branch_id") != manager["branch_id"]:
+        return False
+    if manager.get("department_id") and profile.get("department_id") != manager["department_id"]:
+        return False
+    if manager["role"] == "business":
+        return profile.get("role") in ("business", "business_hr", "business_view")
+    if manager["role"] == "business_hr":
+        return profile.get("role") in ("business_hr", "business_view")
+    return profile.get("role") == "business_view"
+
+
 def read_hierarchy():
     try:
         with open(HIERARCHY_FILE, encoding="utf-8") as f:
@@ -471,10 +503,66 @@ def create_organization_record():
 USER_ROLES = ("developer", "business", "business_hr", "business_view")
 
 
+@app.get("/api/users")
+def get_user_accounts():
+    denied = _require_user_manager()
+    if denied:
+        return denied
+    if g.profile["role"] in ("business", "business_view") and not g.profile.get("business_id"):
+        return jsonify(error="Your account has no business scope."), 403
+    try:
+        admin = _service_admin_client()
+        businesses = {
+            row["id"]: row["name"]
+            for row in admin.table("businesses").select("id,name").execute().data
+        }
+        profiles = (
+            admin.table("profiles")
+            .select("id,full_name,role,business_id,branch_id,department_id,trainee_id")
+            .execute()
+            .data
+        )
+        users = []
+        for profile in profiles:
+            if profile.get("role") not in USER_ROLES or profile.get("trainee_id"):
+                continue
+            if not _can_manage_staff_profile(profile):
+                continue
+            username = profile.get("full_name")
+            if not isinstance(username, str) or not username.strip():
+                auth_user = admin.auth.admin.get_user_by_id(profile["id"]).user
+                metadata = getattr(auth_user, "user_metadata", None) or {}
+                username = metadata.get("username") or metadata.get("full_name")
+                if not isinstance(username, str) or not username.strip():
+                    return jsonify(
+                        error="A user account is missing its username in both the profile and Auth metadata."
+                    ), 502
+            users.append({
+                "id": profile["id"],
+                "username": username.strip(),
+                "role": profile["role"],
+                "business_id": profile.get("business_id"),
+                "business": businesses.get(profile.get("business_id"), ""),
+            })
+        users.sort(key=lambda user: (user["username"].casefold(), user["role"]))
+        return jsonify(users)
+    except RuntimeError as exc:
+        app.logger.error("Could not load user accounts: %s", exc)
+        return jsonify(error=str(exc)), 503
+    except AuthApiError:
+        app.logger.exception("Could not load user account metadata from Supabase Auth")
+        return jsonify(error="Could not load user account metadata from Supabase Auth."), 502
+    except APIError as exc:
+        app.logger.exception("Could not load user accounts from Supabase")
+        code = getattr(exc, "code", None)
+        detail = f" (database error {code})" if code else ""
+        return jsonify(error=f"Could not load user accounts from Supabase{detail}."), 502
+
+
 @app.post("/api/users")
 def create_user_account():
     """Create a sign-in account (Supabase Auth user + profile) for staff roles."""
-    denied = _require_org_manager()
+    denied = _require_user_manager()
     if denied:
         return denied
     body = request.get_json(silent=True)
@@ -499,25 +587,28 @@ def create_user_account():
         if role == "developer" or all_businesses:
             business_id = None
     else:
-        # Business and scoped HR accounts can only add users within their business.
-        if role == "developer":
-            return jsonify(error="Only a developer can create developer accounts."), 403
+        manager_role = g.profile["role"]
+        allowed_roles = {
+            "business": ("business", "business_hr", "business_view"),
+            "business_hr": ("business_hr", "business_view"),
+            "business_view": ("business_view",),
+        }.get(manager_role, ())
+        if role not in allowed_roles:
+            return jsonify(error="Your account cannot create that role."), 403
         profile_business_id = g.profile.get("business_id")
         if profile_business_id:
             business_id = profile_business_id
-        elif g.profile["role"] == "business_hr":
+        elif manager_role == "business_hr":
             if not business_id or business_id == "all":
                 return jsonify(error="Choose one business for this user."), 400
         else:
             return jsonify(error="Your account has no business scope."), 403
 
-    service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-    if not service_key:
-        return jsonify(error="SUPABASE_SERVICE_ROLE_KEY is not configured on the server."), 503
     try:
+        admin = _service_admin_client()
         if business_id:
             business = (
-                g.database.client.table("businesses")
+                admin.table("businesses")
                 .select("id,name")
                 .eq("id", business_id)
                 .maybe_single()
@@ -526,7 +617,6 @@ def create_user_account():
             )
             if not business:
                 return jsonify(error="Choose an existing business."), 400
-        admin = create_client(os.environ.get("SUPABASE_URL"), service_key)
         auth_user = admin.auth.admin.create_user({
             "email": trainee_auth_email(username),
             "password": password,
@@ -539,6 +629,9 @@ def create_user_account():
             "role": role,
             "business_id": business_id,
         }
+        if not _is_developer():
+            profile["branch_id"] = g.profile.get("branch_id")
+            profile["department_id"] = g.profile.get("department_id")
         try:
             admin.table("profiles").upsert(profile).execute()
         except Exception:
@@ -562,6 +655,171 @@ def create_user_account():
         app.logger.exception("Could not create the user profile")
         return jsonify(error="Could not create the user profile."), 502
     return jsonify(ok=True, username=username, role=role), 201
+
+
+@app.put("/api/users/<user_id>")
+def update_user_account(user_id):
+    denied = _require_user_manager()
+    if denied:
+        return denied
+    try:
+        user_id = str(uuid.UUID(user_id))
+    except (ValueError, TypeError, AttributeError):
+        return jsonify(error="Choose a valid user account."), 400
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify(error="Invalid user details."), 400
+    username = " ".join(str(body.get("username") or "").split())
+    password = body.get("password") or ""
+    if not username or "@" in username:
+        return jsonify(error="Enter a valid username (no @, and not \"developer\")."), 400
+    if not isinstance(password, str):
+        return jsonify(error="Invalid password."), 400
+    if password and len(password) < 6:
+        return jsonify(error="Password must be at least 6 characters."), 400
+
+    try:
+        admin = _service_admin_client()
+        profile = (
+            admin.table("profiles")
+            .select("id,full_name,role,business_id,branch_id,department_id,trainee_id")
+            .eq("id", user_id)
+            .maybe_single()
+            .execute()
+            .data
+        )
+        if not profile or profile.get("role") not in USER_ROLES or profile.get("trainee_id"):
+            return jsonify(error="User account not found."), 404
+        if not _can_manage_staff_profile(profile):
+            return jsonify(error="Your account cannot manage this user."), 403
+        if username.casefold() == "developer" and username.casefold() != str(
+            profile["full_name"]
+        ).casefold():
+            return jsonify(error="The username \"developer\" is reserved."), 400
+
+        role = str(body.get("role") or profile["role"])
+        if role not in USER_ROLES:
+            return jsonify(error="Choose a valid role."), 400
+        if user_id == str(g.profile.get("id")) and role != profile["role"]:
+            return jsonify(error="You cannot change your own role."), 400
+        if not _is_developer():
+            allowed_roles = {
+                "business": ("business", "business_hr", "business_view"),
+                "business_hr": ("business_hr", "business_view"),
+                "business_view": ("business_view",),
+            }.get(g.profile["role"], ())
+            if role not in allowed_roles:
+                return jsonify(error="Your account cannot assign that role."), 403
+            business_id = g.profile.get("business_id")
+            if g.profile["role"] == "business_hr" and not business_id:
+                business_id = body.get("business_id", profile.get("business_id"))
+        else:
+            business_id = body.get("business_id", profile.get("business_id"))
+            if role == "developer":
+                business_id = None
+            elif not business_id:
+                return jsonify(error="Choose a business for this user."), 400
+        if role != "developer":
+            business = (
+                admin.table("businesses")
+                .select("id")
+                .eq("id", business_id)
+                .maybe_single()
+                .execute()
+                .data
+            )
+            if not business:
+                return jsonify(error="Choose an existing business."), 400
+
+        updated_profile = {
+            "full_name": username,
+            "role": role,
+            "business_id": business_id,
+        }
+        if _is_developer() and (
+            role == "developer" or business_id != profile.get("business_id")
+        ):
+            updated_profile.update({"branch_id": None, "department_id": None})
+        admin.table("profiles").update(updated_profile).eq("id", user_id).execute()
+        auth_attributes = {}
+        if username != profile["full_name"]:
+            auth_attributes.update({
+                "email": trainee_auth_email(username),
+                "user_metadata": {"username": username, "full_name": username},
+            })
+        if password:
+            auth_attributes["password"] = password
+        if auth_attributes:
+            try:
+                admin.auth.admin.update_user_by_id(user_id, auth_attributes)
+            except AuthApiError as exc:
+                try:
+                    admin.table("profiles").update({
+                        "full_name": profile["full_name"],
+                        "role": profile["role"],
+                        "business_id": profile.get("business_id"),
+                        "branch_id": profile.get("branch_id"),
+                        "department_id": profile.get("department_id"),
+                    }).eq("id", user_id).execute()
+                except APIError:
+                    app.logger.exception("Could not restore a user profile after Auth update failed")
+                    return jsonify(
+                        error="Could not update the account, and profile rollback failed. Contact an administrator."
+                    ), 502
+                message = str(getattr(exc, "message", exc)).lower()
+                if "already" in message or "registered" in message or "exists" in message:
+                    return jsonify(error="That username is already taken."), 409
+                app.logger.warning("Could not update user in Supabase Auth: %s", exc)
+                return jsonify(error="Could not update the user account."), 502
+        return jsonify(ok=True, username=username, role=role)
+    except RuntimeError as exc:
+        app.logger.error("Could not update user account: %s", exc)
+        return jsonify(error=str(exc)), 503
+    except AuthApiError:
+        app.logger.exception("Could not update the user account in Supabase Auth")
+        return jsonify(error="Could not update the user account."), 502
+    except APIError:
+        app.logger.exception("Could not update the user profile in Supabase")
+        return jsonify(error="Could not update the user profile."), 502
+
+
+@app.delete("/api/users/<user_id>")
+def delete_user_account(user_id):
+    denied = _require_user_manager()
+    if denied:
+        return denied
+    try:
+        user_id = str(uuid.UUID(user_id))
+    except (ValueError, TypeError, AttributeError):
+        return jsonify(error="Choose a valid user account."), 400
+    if user_id == str(g.profile.get("id")):
+        return jsonify(error="You cannot remove your own account."), 400
+    try:
+        admin = _service_admin_client()
+        profile = (
+            admin.table("profiles")
+            .select("id,role,business_id,branch_id,department_id,trainee_id")
+            .eq("id", user_id)
+            .maybe_single()
+            .execute()
+            .data
+        )
+        if not profile or profile.get("role") not in USER_ROLES or profile.get("trainee_id"):
+            return jsonify(error="User account not found."), 404
+        if not _can_manage_staff_profile(profile):
+            return jsonify(error="Your account cannot manage this user."), 403
+        admin.auth.admin.delete_user(user_id)
+        admin.table("profiles").delete().eq("id", user_id).execute()
+        return jsonify(ok=True)
+    except RuntimeError as exc:
+        app.logger.error("Could not remove user account: %s", exc)
+        return jsonify(error=str(exc)), 503
+    except AuthApiError:
+        app.logger.exception("Could not remove user account from Supabase Auth")
+        return jsonify(error="Could not remove the user account."), 502
+    except APIError:
+        app.logger.exception("Could not remove user profile from Supabase")
+        return jsonify(error="The account was removed, but its profile cleanup failed."), 502
 
 
 @app.get("/api/trainees")
@@ -654,20 +912,14 @@ def put_trainees():
 
 
 def _video_map_from_database():
-    businesses = (
-        g.database.client.table("businesses")
-        .select("id,name")
-        .execute()
-        .data
-    )
-    names = {row["id"]: row["name"] for row in businesses}
     mappings = g.database.list_video_task_mappings()
-    data = {}
-    for mapping in mappings:
-        business = names.get(mapping["business_id"])
-        if business:
-            data.setdefault(business, {})[mapping["task_key"]] = mapping["video_folder"]
-    return data
+    shared = {}
+    for mapping in sorted(
+        mappings,
+        key=lambda item: (item["business_id"], item["task_key"]),
+    ):
+        shared.setdefault(mapping["task_key"], mapping["video_folder"])
+    return {"*": shared}
 
 
 def _video_map_database_error(exc):
@@ -694,7 +946,7 @@ def get_video_map():
 def put_video_map():
     """Map one task to a video folder, or remove the mapping when folder is null/empty.
 
-    Body: {"business": "Magnus", "key": "0|Marketing introduction", "folder": "HRMS _ MARKETING/INTRO"}
+    Body: {"key": "0|Marketing introduction", "folder": "HRMS _ MARKETING/INTRO"}
     """
     denied = _require_developer()
     if denied:
@@ -702,11 +954,8 @@ def put_video_map():
     body = request.get_json(silent=True)
     if not isinstance(body, dict):
         return jsonify(error="Invalid mapping details."), 400
-    business = body.get("business")
     key = body.get("key")
     folder = body.get("folder")
-    if not isinstance(business, str) or not business.strip():
-        return jsonify(error="Choose a business."), 400
     if not isinstance(key, str) or not key.strip():
         return jsonify(error="Choose a task."), 400
     if folder is not None and not isinstance(folder, str):
@@ -714,19 +963,19 @@ def put_video_map():
     if folder and (".." in folder.split("/") or folder.startswith("/") or "\\" in folder):
         return jsonify(error="Invalid video folder."), 400
     try:
-        business_row = next(
-            (
-                row for row in g.database.client.table("businesses")
-                .select("id,name").execute().data
-                if row["name"] == business.strip()
-            ),
-            None,
+        businesses = sorted(
+            g.database.client.table("businesses")
+            .select("id,name")
+            .execute()
+            .data,
+            key=lambda row: row["name"].casefold(),
         )
-        if not business_row:
-            return jsonify(error="Choose an existing business."), 400
-        g.database.save_video_task_mapping(
-            business_row["id"], key.strip(), folder
-        )
+        if not businesses:
+            return jsonify(error="No businesses are available for this mapping."), 400
+        for business in businesses:
+            g.database.save_video_task_mapping(
+                business["id"], key.strip(), folder
+            )
         return jsonify(_video_map_from_database())
     except RuntimeError as exc:
         app.logger.error("Could not access video mappings in Supabase: %s", exc)

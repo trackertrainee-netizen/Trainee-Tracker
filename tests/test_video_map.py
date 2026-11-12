@@ -105,7 +105,7 @@ class VideoMapTests(unittest.TestCase):
         self.client = Client()
         self.database = Database(self.client)
 
-    def test_get_returns_business_name_keyed_mappings_in_current_scope(self):
+    def test_get_returns_one_shared_mapping_set(self):
         self.client.businesses = [{"id": MAGNUS_ID, "name": "Magnus"}]
         self.client.mappings = [
             {
@@ -126,15 +126,14 @@ class VideoMapTests(unittest.TestCase):
 
         self.assertEqual(
             response.get_json(),
-            {"Magnus": {"1|Branding": "MARKETING/BRANDING"}},
+            {"*": {"1|Branding": "MARKETING/BRANDING"}},
         )
 
-    def test_put_saves_mapping_by_business_id_and_returns_existing_api_shape(self):
+    def test_put_saves_mapping_for_all_businesses(self):
         with server.app.test_request_context(
             "/api/video-map",
             method="PUT",
             json={
-                "business": "Magnus",
                 "key": "1|Branding",
                 "folder": "MARKETING/BRANDING",
             },
@@ -146,27 +145,41 @@ class VideoMapTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
             self.client.mappings,
-            [{
-                "business_id": MAGNUS_ID,
-                "task_key": "1|Branding",
-                "video_folder": "MARKETING/BRANDING",
-            }],
+            [
+                {
+                    "business_id": ALIMS_ID,
+                    "task_key": "1|Branding",
+                    "video_folder": "MARKETING/BRANDING",
+                },
+                {
+                    "business_id": MAGNUS_ID,
+                    "task_key": "1|Branding",
+                    "video_folder": "MARKETING/BRANDING",
+                },
+            ],
         )
         self.assertEqual(
             response.get_json(),
-            {"Magnus": {"1|Branding": "MARKETING/BRANDING"}},
+            {"*": {"1|Branding": "MARKETING/BRANDING"}},
         )
 
     def test_put_with_empty_folder_removes_mapping(self):
-        self.client.mappings = [{
-            "business_id": MAGNUS_ID,
-            "task_key": "1|Branding",
-            "video_folder": "MARKETING/BRANDING",
-        }]
+        self.client.mappings = [
+            {
+                "business_id": MAGNUS_ID,
+                "task_key": "1|Branding",
+                "video_folder": "MARKETING/BRANDING",
+            },
+            {
+                "business_id": ALIMS_ID,
+                "task_key": "1|Branding",
+                "video_folder": "MARKETING/BRANDING",
+            },
+        ]
         with server.app.test_request_context(
             "/api/video-map",
             method="PUT",
-            json={"business": "Magnus", "key": "1|Branding", "folder": None},
+            json={"key": "1|Branding", "folder": None},
         ):
             g.profile = {"role": "developer"}
             g.database = self.database
@@ -174,7 +187,7 @@ class VideoMapTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(self.client.mappings, [])
-        self.assertEqual(response.get_json(), {})
+        self.assertEqual(response.get_json(), {"*": {}})
 
     def test_missing_supabase_table_returns_actionable_error(self):
         self.client.error = APIError({
@@ -201,7 +214,6 @@ class VideoMapTests(unittest.TestCase):
             "/api/video-map",
             method="PUT",
             json={
-                "business": "Magnus",
                 "key": "1|Branding",
                 "folder": "MARKETING/BRANDING",
             },
