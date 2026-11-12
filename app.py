@@ -7,6 +7,7 @@ import tempfile
 import threading
 import time
 import uuid
+from datetime import datetime, timezone
 
 from botocore.exceptions import BotoCoreError, ClientError
 from dotenv import load_dotenv
@@ -15,7 +16,7 @@ from postgrest.exceptions import APIError
 from supabase import AuthApiError, create_client
 from storage3.exceptions import StorageException
 
-from DATA_BASE.db import DataBase, trainee_auth_email
+from DATA_BASE.db import DataBase, presentation_prefix, trainee_auth_email
 
 from CLOUD_FLARE.modules import (
     MAX_PRESENTATION_BYTES,
@@ -31,7 +32,6 @@ from CLOUD_FLARE.modules import (
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE, ".env"))
-VIDEO_MAP_FILE = os.path.join(BASE, "video_map.json")
 HIERARCHY_FILE = os.path.join(BASE, "hierarchy_images.json")
 PRESENTATION_BUCKET = "presentations"
 # Keep in sync with BUSINESSES in static/config.js
@@ -177,22 +177,6 @@ def _require_org_manager():
     return None
 
 
-def read_video_map():
-    try:
-        with open(VIDEO_MAP_FILE, encoding="utf-8") as f:
-            data = json.load(f)
-        return data if isinstance(data, dict) else {}
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
-
-
-def write_video_map(data):
-    fd, tmp = tempfile.mkstemp(dir=BASE, suffix=".tmp")
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, VIDEO_MAP_FILE)
-
-
 def read_hierarchy():
     try:
         with open(HIERARCHY_FILE, encoding="utf-8") as f:
@@ -227,10 +211,7 @@ def _image_type(data):
 
 
 def _presentation_key(trainee_name, trainee_id, step):
-    folder_name = trainee_name.strip().replace("/", "-").replace("\\", "-")
-    if not folder_name or folder_name in (".", ".."):
-        raise ValueError("The trainee must have a valid name to store presentations.")
-    return f"{folder_name}/{trainee_id}/{step}.pdf"
+    return f"{presentation_prefix(trainee_name, trainee_id)}/{step}.pdf"
 
 
 def _upload_session_path(upload_id):
@@ -640,6 +621,11 @@ def put_trainees():
     except RuntimeError as exc:
         app.logger.error("Trainee account configuration or cleanup error: %s", exc)
         return jsonify(error=str(exc)), 503
+    except StorageException:
+        app.logger.exception("Could not remove trainee presentations from storage")
+        return jsonify(
+            error="Could not remove the trainee's presentations. The trainee was not deleted; try again or contact an administrator."
+        ), 502
     except AuthApiError:
         app.logger.exception("Could not create trainee login in Supabase Auth")
         return jsonify(error="Could not create the trainee login account."), 502
@@ -651,18 +637,43 @@ def put_trainees():
     return jsonify(ok=True, count=count)
 
 
+def _video_map_from_database():
+    businesses = (
+        g.database.client.table("businesses")
+        .select("id,name")
+        .execute()
+        .data
+    )
+    names = {row["id"]: row["name"] for row in businesses}
+    mappings = (
+        g.database.client.table("video_task_mappings")
+        .select("business_id,task_key,video_folder")
+        .execute()
+        .data
+    )
+    data = {}
+    for mapping in mappings:
+        business = names.get(mapping["business_id"])
+        if business:
+            data.setdefault(business, {})[mapping["task_key"]] = mapping["video_folder"]
+    return data
+
+
+def _video_map_database_error(exc):
+    app.logger.exception("Could not access video mappings in Supabase")
+    if getattr(exc, "code", None) == "PGRST205":
+        return jsonify(error="Video mapping schema is unavailable. Apply DATA_BASE/workflow.sql in Supabase."), 503
+    if getattr(exc, "code", None) == "42501":
+        return jsonify(error="Your account is not allowed to access video mappings."), 403
+    return jsonify(error="Could not access video mappings in Supabase."), 502
+
+
 @app.get("/api/video-map")
 def get_video_map():
-    with lock:
-        data = read_video_map()
-    if _is_developer():
-        return jsonify(data)
     try:
-        names = _business_names()
-    except APIError:
-        app.logger.exception("Could not check video mapping scope")
-        return jsonify(error="Could not load video mappings."), 502
-    return jsonify({name: value for name, value in data.items() if name in names})
+        return jsonify(_video_map_from_database())
+    except APIError as exc:
+        return _video_map_database_error(exc)
 
 
 @app.put("/api/video-map")
@@ -688,17 +699,34 @@ def put_video_map():
         return jsonify(error="Invalid video folder."), 400
     if folder and (".." in folder.split("/") or folder.startswith("/") or "\\" in folder):
         return jsonify(error="Invalid video folder."), 400
-    with lock:
-        data = read_video_map()
-        mapped = data.setdefault(business, {})
+    try:
+        business_row = next(
+            (
+                row for row in g.database.client.table("businesses")
+                .select("id,name").execute().data
+                if row["name"] == business.strip()
+            ),
+            None,
+        )
+        if not business_row:
+            return jsonify(error="Choose an existing business."), 400
+        query = g.database.client.table("video_task_mappings")
         if folder:
-            mapped[key] = folder
+            query.upsert(
+                {
+                    "business_id": business_row["id"],
+                    "task_key": key.strip(),
+                    "video_folder": folder,
+                },
+                on_conflict="business_id,task_key",
+            ).execute()
         else:
-            mapped.pop(key, None)
-            if not mapped:
-                data.pop(business, None)
-        write_video_map(data)
-        return jsonify(data)
+            query.delete().eq("business_id", business_row["id"]).eq(
+                "task_key", key.strip()
+            ).execute()
+        return jsonify(_video_map_from_database())
+    except APIError as exc:
+        return _video_map_database_error(exc)
 
 
 @app.get("/api/hierarchy-images")
@@ -921,6 +949,240 @@ def list_video_folders():
     except (BotoCoreError, ClientError):
         app.logger.exception("Could not list video folders")
         return jsonify(error="Could not load videos from storage."), 502
+
+
+def _video_step_index(value):
+    if isinstance(value, bool):
+        return None
+    if not isinstance(value, int) and not (isinstance(value, str) and value.isdigit()):
+        return None
+    step_index = int(value)
+    if step_index < 0:
+        return None
+    step = (
+        g.database.client.table("training_steps")
+        .select("step_index,step_type")
+        .eq("step_index", step_index)
+        .maybe_single()
+        .execute()
+        .data
+    )
+    return step_index if step and step.get("step_type") == "VIDEO" else None
+
+
+VIDEO_REPLAY_MIGRATION_MESSAGE = (
+    "Video replay tables are missing. Apply DATA_BASE/workflow.sql in Supabase, "
+    "then refresh the API schema cache."
+)
+
+
+def _video_replay_schema_error(exc):
+    if getattr(exc, "code", None) != "PGRST205":
+        return None
+    app.logger.error("Video replay schema is unavailable: %s", exc)
+    return jsonify(error=VIDEO_REPLAY_MIGRATION_MESSAGE), 503
+
+
+@app.post("/api/video-watch-completions")
+def record_video_watch_completion():
+    if g.profile["role"] != "trainee":
+        return jsonify(error="Only trainees can record video completion."), 403
+    body = request.get_json(silent=True)
+    try:
+        step_index = _video_step_index(body.get("step_index") if isinstance(body, dict) else None)
+    except APIError:
+        app.logger.exception("Could not validate trainee video completion")
+        return jsonify(error="Could not validate this video task."), 502
+    if step_index is None:
+        return jsonify(error="Choose a valid video task."), 400
+
+    trainee_id = g.profile.get("trainee_id")
+    if not trainee_id:
+        return jsonify(error="No trainee record is linked to this account."), 403
+    try:
+        watches = g.database.client.table("video_watch_completions")
+        existing = (
+            watches.select("trainee_id")
+            .eq("trainee_id", trainee_id)
+            .eq("step_index", step_index)
+            .maybe_single()
+            .execute()
+            .data
+        )
+        if not existing:
+            watches.insert({"trainee_id": trainee_id, "step_index": step_index}).execute()
+    except APIError as exc:
+        if getattr(exc, "code", None) == "23505":
+            return jsonify(ok=True), 200
+        schema_error = _video_replay_schema_error(exc)
+        if schema_error:
+            return schema_error
+        app.logger.exception("Could not save trainee video completion")
+        return jsonify(error="Could not save video completion."), 502
+    return jsonify(ok=True)
+
+
+@app.get("/api/video-watch-completions")
+def list_video_watch_completions():
+    if g.profile["role"] != "trainee" or not g.profile.get("trainee_id"):
+        return jsonify(error="Only linked trainees can view video completion."), 403
+    try:
+        rows = (
+            g.database.client.table("video_watch_completions")
+            .select("step_index")
+            .eq("trainee_id", g.profile["trainee_id"])
+            .execute()
+            .data
+        )
+        return jsonify(rows)
+    except APIError as exc:
+        schema_error = _video_replay_schema_error(exc)
+        if schema_error:
+            return schema_error
+        app.logger.exception("Could not load trainee video completion")
+        return jsonify(error="Could not load video completion."), 502
+
+
+@app.get("/api/video-replay-requests")
+def list_video_replay_requests():
+    if g.profile["role"] not in ("trainee", "business", "developer"):
+        return jsonify(error="Your account cannot view video replay requests."), 403
+    try:
+        query = (
+            g.database.client.table("video_replay_requests")
+            .select("id,trainee_id,step_index,status,created_at,reviewed_at")
+            .order("created_at", desc=True)
+        )
+        if g.profile["role"] == "trainee":
+            query = query.eq("trainee_id", g.profile.get("trainee_id"))
+        return jsonify(query.execute().data)
+    except APIError as exc:
+        schema_error = _video_replay_schema_error(exc)
+        if schema_error:
+            return schema_error
+        app.logger.exception("Could not load video replay requests")
+        return jsonify(error="Could not load video replay requests."), 502
+
+
+@app.post("/api/video-replay-requests")
+def create_video_replay_request():
+    if g.profile["role"] != "trainee":
+        return jsonify(error="Only trainees can request a video replay."), 403
+    trainee_id = g.profile.get("trainee_id")
+    if not trainee_id:
+        return jsonify(error="No trainee record is linked to this account."), 403
+    body = request.get_json(silent=True)
+    try:
+        step_index = _video_step_index(body.get("step_index") if isinstance(body, dict) else None)
+    except APIError as exc:
+        schema_error = _video_replay_schema_error(exc)
+        if schema_error:
+            return schema_error
+        app.logger.exception("Could not validate video replay request")
+        return jsonify(error="Could not validate this video task."), 502
+    if step_index is None:
+        return jsonify(error="Choose a valid video task."), 400
+    client = g.database.client
+    try:
+        watched = (
+            client.table("video_watch_completions")
+            .select("trainee_id")
+            .eq("trainee_id", trainee_id)
+            .eq("step_index", step_index)
+            .maybe_single()
+            .execute()
+            .data
+        )
+        if not watched:
+            return jsonify(error="Finish the video before requesting a replay."), 409
+        requests = client.table("video_replay_requests")
+        pending = (
+            requests.select("id")
+            .eq("trainee_id", trainee_id)
+            .eq("step_index", step_index)
+            .eq("status", "pending")
+            .maybe_single()
+            .execute()
+            .data
+        )
+        if not pending:
+            requests.insert({
+                "trainee_id": trainee_id,
+                "step_index": step_index,
+            }).execute()
+    except APIError as exc:
+        if getattr(exc, "code", None) == "23505":
+            return jsonify(ok=True, status="pending"), 200
+        schema_error = _video_replay_schema_error(exc)
+        if schema_error:
+            return schema_error
+        app.logger.exception("Could not create video replay request")
+        return jsonify(error="Could not send the replay request to HR."), 502
+    return jsonify(ok=True, status="pending"), 201
+
+
+@app.put("/api/video-replay-requests/<request_id>")
+def review_video_replay_request(request_id):
+    try:
+        normalized_id = str(uuid.UUID(request_id))
+    except (ValueError, TypeError, AttributeError):
+        return jsonify(error="Choose a valid replay request."), 400
+    if normalized_id != request_id:
+        return jsonify(error="Choose a valid replay request."), 400
+    body = request.get_json(silent=True)
+    decision = body.get("status") if isinstance(body, dict) else None
+    role = g.profile["role"]
+    if role == "trainee":
+        if decision != "used" or not g.profile.get("trainee_id"):
+            return jsonify(error="Invalid replay authorization."), 403
+    elif role not in ("business", "developer"):
+        return jsonify(error="Only business HR can review video replay requests."), 403
+    elif decision not in ("approved", "declined"):
+        return jsonify(error="Choose approve or decline."), 400
+
+    requests = g.database.client.table("video_replay_requests")
+    try:
+        if role == "trainee":
+            approved = (
+                requests.select("id")
+                .eq("id", normalized_id)
+                .eq("trainee_id", g.profile["trainee_id"])
+                .eq("status", "approved")
+                .maybe_single()
+                .execute()
+                .data
+            )
+            if not approved:
+                return jsonify(error="Approved replay request not found."), 404
+            requests.update({"status": "used"}).eq("id", normalized_id).eq(
+                "status", "approved"
+            ).execute()
+            return jsonify(ok=True, status="used")
+
+        existing = (
+            requests.select("id")
+            .eq("id", normalized_id)
+            .eq("status", "pending")
+            .maybe_single()
+            .execute()
+            .data
+        )
+        if not existing:
+            return jsonify(error="Pending replay request not found."), 404
+        requests.update({
+            "status": decision,
+            "reviewed_at": datetime.now(timezone.utc).isoformat(),
+            "reviewed_by": g.auth_user.id,
+        }).eq("id", normalized_id).eq("status", "pending").execute()
+    except APIError as exc:
+        if getattr(exc, "code", None) == "42501":
+            return jsonify(error="That replay request is outside your business scope."), 403
+        schema_error = _video_replay_schema_error(exc)
+        if schema_error:
+            return schema_error
+        app.logger.exception("Could not review video replay request")
+        return jsonify(error="Could not update the replay request."), 502
+    return jsonify(ok=True, status=decision)
 
 
 @app.get("/api/video-folders")

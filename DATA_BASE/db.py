@@ -15,6 +15,13 @@ def trainee_auth_email(username):
     return f"trainee-{digest}@trainee-tracker.invalid"
 
 
+def presentation_prefix(trainee_name, trainee_id):
+    folder_name = trainee_name.strip().replace("/", "-").replace("\\", "-")
+    if not folder_name or folder_name in (".", ".."):
+        raise ValueError("The trainee must have a valid name to store presentations.")
+    return f"{folder_name}/{trainee_id}"
+
+
 class DataBase:
     def __init__(self, url, api_key, access_token=None):
         if not url or not api_key:
@@ -250,7 +257,7 @@ class DataBase:
         if not isinstance(rows, list):
             raise ValueError("Expected a list of trainee records.")
 
-        current = self.client.table("trainee_workflow").select("id").execute().data
+        current = self.client.table("trainee_workflow").select("id,name").execute().data
         current_ids = {row["id"] for row in current}
         current_progress = (
             self.client.table("trainee_progress")
@@ -305,13 +312,16 @@ class DataBase:
                 progress = {
                     "trainee_id": trainee_id,
                     "step_index": step_index,
-                    "assigned_at": log.get("a"),
                     "started_at": log.get("st"),
                     "completed_at": log.get("c"),
-                    "verified_by": log.get("v"),
-                    "verified_at": log.get("vt"),
                     "presentation": log.get("pdf"),
                 }
+                if not trainee_role:
+                    progress.update({
+                        "assigned_at": log.get("a"),
+                        "verified_by": log.get("v"),
+                        "verified_at": log.get("vt"),
+                    })
                 progress_query = self.client.table("trainee_progress")
                 progress_key = (trainee_id, step_index)
                 if progress_key in existing_progress:
@@ -339,7 +349,21 @@ class DataBase:
                     ).execute()
 
         if not trainee_role:
-            for trainee_id in current_ids - incoming_ids:
+            for trainee in current:
+                trainee_id = trainee["id"]
+                if trainee_id in incoming_ids:
+                    continue
+                admin = admin or self._auth_admin_client()
+                prefix = presentation_prefix(trainee["name"], trainee_id)
+                bucket = admin.storage.from_("presentations")
+                files = bucket.list(prefix, {"limit": 1000})
+                paths = [
+                    f"{prefix}/{item['name']}"
+                    for item in files
+                    if isinstance(item, dict) and isinstance(item.get("name"), str)
+                ]
+                if paths:
+                    bucket.remove(paths)
                 self.client.table("trainees").delete().eq("id", trainee_id).execute()
 
         return len(rows)
