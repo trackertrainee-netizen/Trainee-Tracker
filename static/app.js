@@ -102,7 +102,7 @@ function traineeAccountModal(t){
 function videoModal(){
  if(S.user.role==="trainee"&&S.videoStep!=null){
   const step=ST[S.videoStep];
-   return `<div class="trainee-video-screen" id="trainee-video-shell" role="dialog" aria-modal="true" aria-labelledby="video-title"><header class="trainee-video-heading"><h1 id="video-title">${esc(step.n)}</h1><span>Training video · ${esc(MODS[step.m].n)}</span></header><video id="video-player" class="trainee-video-player" aria-labelledby="video-title" playsinline preload="auto"${S.videoAutoplay?" autoplay":""}></video><div id="video-player-status" class="trainee-video-status" role="status" aria-live="polite">Loading video…</div><div class="trainee-video-controls"><button type="button" class="p" data-a="trainee-video-toggle" id="trainee-video-toggle">Play</button><button type="button" data-a="trainee-video-rewind">Rewind 10 seconds</button><button type="button" data-a="trainee-video-return" id="trainee-video-return" hidden>Return to where you first rewound</button></div><section class="trainee-video-finished" id="trainee-video-finished" hidden><b>Video finished</b><div id="video-replay-status" class="trainee-video-status" role="status" aria-live="polite">Saving video completion…</div><button type="button" class="p" data-a="video-replay-request" id="video-replay-request" disabled>Request replay from HR</button><button type="button" data-a="trainee-video-continue">Continue</button></section></div>`;
+   return `<div class="trainee-video-screen" id="trainee-video-shell" role="dialog" aria-modal="true" aria-labelledby="video-title"><header class="trainee-video-heading"><h1 id="video-title">${esc(step.n)}</h1><span>Training video · ${esc(MODS[step.m].n)}</span></header><video id="video-player" class="trainee-video-player" aria-labelledby="video-title" playsinline preload="auto"${S.videoAutoplay?" autoplay":""}></video><div id="video-player-status" class="trainee-video-status" role="status" aria-live="polite">Loading video…</div><div class="trainee-video-controls"><button type="button" class="video-control p" data-a="trainee-video-toggle" id="trainee-video-toggle" aria-label="Play video" title="Play video">${VIDEO_ICONS.play}</button><button type="button" class="video-control" data-a="trainee-video-rewind" aria-label="Rewind 10 seconds" title="Rewind 10 seconds">${VIDEO_ICONS.rewind}</button><button type="button" class="video-control" data-a="trainee-video-return" id="trainee-video-return" aria-label="Return to where you first rewound" title="Return to where you first rewound" hidden>${VIDEO_ICONS.return}</button><button type="button" class="video-control" data-a="trainee-video-fullscreen" id="trainee-video-fullscreen" aria-label="Enter fullscreen" title="Enter fullscreen">${VIDEO_ICONS.fullscreen}</button></div><section class="trainee-video-finished" id="trainee-video-finished" hidden><b>Video finished</b><div id="video-replay-status" class="trainee-video-status" role="status" aria-live="polite">Saving video completion…</div><button type="button" class="p" data-a="video-replay-request" id="video-replay-request" disabled>Request replay from HR</button><button type="button" data-a="trainee-video-continue">Continue</button></section></div>`;
  }
  if(S.user.role==="trainee"&&S.replayGateStep!=null){
    const step=ST[S.replayGateStep],request=(S.videoReplayRequests||[]).find(item=>item.step_index===S.replayGateStep);
@@ -287,6 +287,14 @@ const now=()=>new Date().toISOString();
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const EYE='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>';
 const EYE_OFF='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 3 18 18M10.6 10.6a2 2 0 0 0 2.8 2.8"/><path d="M9.9 5.2A10.7 10.7 0 0 1 12 5c6.4 0 10 7 10 7a14.8 14.8 0 0 1-3.1 3.8M6.2 6.2C3.5 8 2 12 2 12s3.6 7 10 7a10.5 10.5 0 0 0 4-.8"/></svg>';
+const VIDEO_ICONS={
+ play:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg>',
+ pause:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5h3v14H8zM15 5h3v14h-3z"/></svg>',
+ rewind:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11a9 9 0 1 1 2.6 6.4M3 4v7h7"/><path d="M12 8v8m0-8-2 2m2-2 2 2"/></svg>',
+ return:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h9a7 7 0 0 1 0 14h-2"/></svg>',
+ fullscreen:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></svg>',
+ exitFullscreen:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3v5H3m13-5v5h5M3 16h5v5m13-5h-5v5"/></svg>'
+};
 const passwordToggle=id=>`<button class="pw-toggle" type="button" data-a="password-toggle" data-target="${id}" aria-label="Show password" title="Show password">${EYE}</button>`;
 const fmt=i=>i?new Date(i).toLocaleString([], {dateStyle:"medium",timeStyle:"short"}):"–";
 const took=(a,b)=>{if(!a||!b)return"–";const m=Math.round((new Date(b)-new Date(a))/60000);return m>=60?Math.floor(m/60)+" h "+m%60+" m":m+" m"};
@@ -745,6 +753,7 @@ document.addEventListener("click",e=>{
   else player.pause();
   return;
  }
+ if(a==="trainee-video-fullscreen"){toggleTraineeFullscreen();return}
  if(a==="trainee-video-rewind"){
   const player=document.getElementById("video-player");if(!player)return;
   if(S.videoReturnAt==null){S.videoReturnAt=player.currentTime;updateTraineeVideoControls()}
@@ -829,6 +838,7 @@ document.addEventListener("click",e=>{
  if(a==="videoopen")loadVideoFolders();
  if(a==="replay-inbox-open")loadReplayRequests();
 });
+document.addEventListener("fullscreenchange",updateTraineeVideoControls);
 
 document.addEventListener("change",e=>{
  if(e.target.classList&&e.target.classList.contains("permission-toggle")){
@@ -957,8 +967,21 @@ function requestTraineeFullscreen(){
  const shell=document.getElementById("trainee-video-shell");
  const status=document.getElementById("video-player-status")||document.getElementById("video-replay-status");
  const fallback=()=>{if(status)status.textContent="Browser fullscreen is unavailable; the video remains in full-page view."};
+ if(shell&&document.fullscreenElement===shell)return;
  if(!shell||!shell.requestFullscreen){fallback();return}
  shell.requestFullscreen().catch(fallback);
+}
+function toggleTraineeFullscreen(){
+ const shell=document.getElementById("trainee-video-shell");
+ if(!shell)return;
+ if(document.fullscreenElement===shell&&document.exitFullscreen){
+  document.exitFullscreen().catch(error=>{
+   const status=document.getElementById("video-player-status");
+   if(status)status.textContent=`Fullscreen could not close: ${error instanceof Error?error.message:String(error)}`;
+  });
+  return;
+ }
+ requestTraineeFullscreen();
 }
 async function saveVideoWatchCompletion(){
  const status=document.getElementById("video-player-status"),finished=document.getElementById("trainee-video-finished");
@@ -1003,9 +1026,18 @@ async function requestVideoReplay(){
  }
 }
 function updateTraineeVideoControls(){
- const player=document.getElementById("video-player"),toggle=document.getElementById("trainee-video-toggle"),back=document.getElementById("trainee-video-return");
- if(toggle&&player)toggle.textContent=player.paused?"Play":"Pause";
+ const player=document.getElementById("video-player"),toggle=document.getElementById("trainee-video-toggle"),back=document.getElementById("trainee-video-return"),fullscreen=document.getElementById("trainee-video-fullscreen"),shell=document.getElementById("trainee-video-shell");
+ if(toggle&&player){
+  const label=player.paused?"Play video":"Pause video";
+  toggle.innerHTML=player.paused?VIDEO_ICONS.play:VIDEO_ICONS.pause;
+  toggle.setAttribute("aria-label",label);toggle.title=label;
+ }
  if(back)back.hidden=S.videoReturnAt==null;
+ if(fullscreen){
+  const active=document.fullscreenElement===shell,label=active?"Exit fullscreen":"Enter fullscreen";
+  fullscreen.innerHTML=active?VIDEO_ICONS.exitFullscreen:VIDEO_ICONS.fullscreen;
+  fullscreen.setAttribute("aria-label",label);fullscreen.title=label;
+ }
 }
 async function loadReplayRequests(){
  try{
