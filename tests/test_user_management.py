@@ -267,7 +267,7 @@ class UserManagementTests(unittest.TestCase):
 
         self.assertEqual(status, 403)
 
-    def test_branch_scoped_viewer_cannot_update_an_account_outside_the_branch(self):
+    def test_legacy_branch_does_not_limit_user_management_within_business(self):
         manager_profile = dict(self.manager, branch_id=BRANCH_ID)
         target = next(row for row in self.admin.profiles if row["id"] == OTHER_VIEWER_ID)
         target["branch_id"] = OTHER_BRANCH_ID
@@ -279,11 +279,12 @@ class UserManagementTests(unittest.TestCase):
         g.profile = manager_profile
         try:
             with patch.object(server, "_service_admin_client", return_value=self.admin):
-                response, status = server.update_user_account(OTHER_VIEWER_ID)
+                response = server.update_user_account(OTHER_VIEWER_ID)
         finally:
             context.pop()
 
-        self.assertEqual(status, 403)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(target["branch_id"], OTHER_BRANCH_ID)
 
     def test_user_cannot_remove_their_own_account(self):
         context = self.request(f"/api/users/{VIEWER_ID}", method="DELETE")

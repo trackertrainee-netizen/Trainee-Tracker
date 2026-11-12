@@ -10,26 +10,6 @@ const DEPTS = [
   "Finance"
 ];
 
-const BRANCHES = [
-  "MANJERI",
-  "KASARGOD",
-  "KANNUR",
-  "KUTTIYADI",
-  "KOZHIKODE",
-  "TIRUR",
-  "PALAKKAD",
-  "THRISSUR",
-  "ERNAKULAM",
-  "ALAPPUZHA",
-  "KOTTAYAM",
-  "KOLLAM",
-  "TRIVANDRUM",
-  "MARTHANDAM",
-  "NAGPUR",
-  "HYDERABAD",
-  "BANGALORE"
-];
-
 // Business slicer options (also used when adding a trainee and when mapping videos).
 const BUSINESSES = [
   "Magnus",

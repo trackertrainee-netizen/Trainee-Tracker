@@ -178,7 +178,6 @@ begin
                 (profile.role::text = 'business_hr' and profile.business_id is null)
                 or profile.business_id = $1
               )
-              and (profile.branch_id is null or profile.branch_id = $2)
               and (profile.department_id is null or profile.department_id = $3)
             )
           )
@@ -304,7 +303,6 @@ create policy "organization branch read in scope" on public.branches
               (profile.role::text = 'business_hr' and profile.business_id is null)
               or profile.business_id = branches.business_id
             )
-            and (profile.branch_id is null or profile.branch_id = branches.id)
           )
         )
     )
@@ -327,7 +325,6 @@ create policy "organization department read in scope" on public.departments
               (profile.role::text = 'business_hr' and profile.business_id is null)
               or profile.business_id = branch.business_id
             )
-            and (profile.branch_id is null or profile.branch_id = branch.id)
             and (profile.department_id is null or profile.department_id = departments.id)
           )
         )
@@ -352,7 +349,6 @@ create policy "organization designation read in scope" on public.designations
               (profile.role::text = 'business_hr' and profile.business_id is null)
               or profile.business_id = branch.business_id
             )
-            and (profile.branch_id is null or profile.branch_id = branch.id)
             and (profile.department_id is null or profile.department_id = department.id)
           )
         )

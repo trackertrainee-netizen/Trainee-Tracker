@@ -19,7 +19,7 @@ const MODS=[
 {n:"Module 5 · SCM & Operations",i:[
 ["TASK","SCM – Billing sheet","120 min","SCM Head"],["TASK","SCM – Smart class","120 min","SCM Head"],["TASK","Final presentation on operations role","120 min","Asst. Operations"]]}];
 const ST=[];MODS.forEach((m,mi)=>m.i.forEach(x=>ST.push({m:mi,t:x[0],n:x[1],d:x[2],by:x[3]})));
-// DEPTS and BRANCHES now live in config.js
+// Business and department options are loaded from the database.
 // ---- Duration helpers
 const mins=d=>{const h=d.match(/(\d+)\s*hr/),n=d.match(/(\d+)\s*min/);return(h?+h[1]*60:0)+(n?+n[1]:0)};
 const hm=m=>m>=60?Math.floor(m/60)+" hr"+(m%60?" "+m%60+" min":""):m+" min";
@@ -192,7 +192,7 @@ const mv=mi=>ST.filter(x=>x.m===mi&&x.t==="VIDEO").reduce((a,x)=>a+x.min,0);
 // ---- State
 const BIZ=BUSINESSES;
 const biz=t=>t.biz||"";
-let S={t:[],sel:null,upload:false,video:false,videoStep:null,videoAutoplay:false,replayGateStep:null,replayGateMsg:"",replayRequestConfirmStep:null,completedVideoSteps:[],videoReplayRequests:[],videoCompletionError:"",videoFinished:false,videoWatchSaved:false,videoReplayRequested:false,videoReturnAt:null,videoLatestTime:0,videoSeekTarget:null,hls:null,view:"overview",bv:"overview",nav:"dashboard",map:false,replayInbox:false,replayInboxData:[],replayInboxMsg:"",pendingReplayCount:0,userListModal:false,managedUsers:[],usersLoading:false,usersMsg:"",userReturnToList:false,settings:false,userManagement:false,userModal:false,userDraft:null,userMsg:"",organization:false,permissions:false,permissionDraft:null,permissionMsg:"",accountModal:false,accountDone:false,accountMsg:"",orgEntity:"business",orgParent:"",orgName:"",orgMsg:"",vmap:{},folders:[],mb:"Magnus",mm:0,mt:null,mf:"",mplay:"",mmsg:"",mfstat:"",himg:{},hmsg:{},user:null,options:{businesses:[],branches:[],departments:[],designations:[]},addBiz:"",addBranch:"",addDept:"",addDesg:"",addmsg:"",loginmsg:""};
+let S={t:[],sel:null,upload:false,video:false,videoStep:null,videoAutoplay:false,replayGateStep:null,replayGateMsg:"",replayRequestConfirmStep:null,completedVideoSteps:[],videoReplayRequests:[],videoCompletionError:"",videoFinished:false,videoWatchSaved:false,videoReplayRequested:false,videoReturnAt:null,videoLatestTime:0,videoSeekTarget:null,hls:null,view:"overview",bv:"overview",nav:"dashboard",map:false,replayInbox:false,replayInboxData:[],replayInboxMsg:"",pendingReplayCount:0,userListModal:false,managedUsers:[],usersLoading:false,usersMsg:"",userReturnToList:false,settings:false,userManagement:false,userModal:false,userDraft:null,userMsg:"",organization:false,permissions:false,permissionDraft:null,permissionMsg:"",accountModal:false,accountDone:false,accountMsg:"",orgEntity:"business",orgParent:"",orgName:"",orgMsg:"",vmap:{},folders:[],mb:"Magnus",mm:0,mt:null,mf:"",mplay:"",mmsg:"",mfstat:"",himg:{},hmsg:{},user:null,options:{businesses:[],departments:[],designations:[]},addBiz:"",addDept:"",addDesg:"",addmsg:"",loginmsg:""};
 let activeVideoUpload=null,replayNotificationTimer=null;
 // ---- Supabase Auth-backed roles
 const sameName=(a,b)=>String(a||"").trim().toLowerCase()===String(b||"").trim().toLowerCase();
@@ -223,7 +223,7 @@ const isOwn=t=>!!(S.user&&S.user.trainee_id===t.id);
 const inScope=t=>{const u=S.user;if(!u)return false;
  if(ALLBIZ(u))return true;
  if(u.role==="business"||u.role==="business_hr"||u.role==="business_view")return vbiz().includes(biz(t))
-  &&(!u.branch||u.branch.name===t.branch)&&(!u.department||u.department.name===t.dept);
+  &&(!u.department||u.department.name===t.dept);
  if(u.role==="trainee")return isOwn(t);
  return false};
 const scoped=()=>S.t.filter(inScope);
@@ -231,7 +231,7 @@ const ownRec=()=>S.t.find(isOwn)||null;
 const oneBiz=()=>vbiz().length===1;
 const roleLabel=()=>S.user?(ROLE_LABELS[S.user.role]||S.user.role):"";
 const scopeLabel=()=>{const u=S.user;if(!u)return"";if(ALLBIZ(u))return"All businesses";
- if(u.business&&u.business.name)return [u.business.name,u.branch&&u.branch.name,u.department&&u.department.name].filter(Boolean).join(" · ");
+ if(u.business&&u.business.name)return [u.business.name,u.department&&u.department.name].filter(Boolean).join(" · ");
  return""};
 const initView=()=>{S.sel=null;S.vm=null;S.q="";S.bv="overview";S.nav="dashboard";S.modal=null;S.edit=false;S.add=false;S.accountModal=false;S.accountDone=false;S.accountMsg="";S.upload=false;S.video=false;S.videoStep=null;S.replayGateStep=null;S.replayGateMsg="";S.replayRequestConfirmStep=null;S.completedVideoSteps=[];S.videoReplayRequests=[];S.videoCompletionError="";S.videoFinished=false;S.videoWatchSaved=false;S.videoReplayRequested=false;S.videoReturnAt=null;S.videoLatestTime=0;S.videoSeekTarget=null;S.map=false;S.replayInbox=false;S.replayInboxData=[];S.replayInboxMsg="";S.pendingReplayCount=0;S.settings=false;S.userManagement=false;S.userModal=false;S.userListModal=false;S.userDraft=null;S.userMsg="";S.managedUsers=[];S.usersLoading=false;S.usersMsg="";S.userReturnToList=false;S.organization=false;S.permissions=false;S.permissionDraft=null;S.view=oneBiz()?vbiz()[0]:"overview"};
 async function login(username,password){
@@ -281,7 +281,7 @@ const mkey=i=>ST[i].m+"|"+ST[i].n;
 const vfolder=(b,i)=>((S.vmap["*"]||S.vmap[b]||Object.values(S.vmap)[0]||{}))[mkey(i)]||"";
 const mvideos=mi=>ST.map((x,i)=>({x,i})).filter(o=>o.x.m===mi&&o.x.t==="VIDEO");
 const loadMap=()=>fetch("/api/video-map").then(r=>r.json()).then(d=>{if(d&&typeof d==="object"&&!d.error)S.vmap=d}).catch(()=>{});
-const loadOptions=()=>fetch("/api/options").then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error||"Could not load organization options.");S.options=d;BUSINESSES.splice(0,BUSINESSES.length,...d.businesses.map(x=>x.name));BRANCHES.splice(0,BRANCHES.length,...[...new Set(d.branches.map(x=>x.name))]);DEPTS.splice(0,DEPTS.length,...[...new Set(d.departments.map(x=>x.name))])});
+const loadOptions=()=>fetch("/api/options").then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error||"Could not load organization options.");S.options=d;BUSINESSES.splice(0,BUSINESSES.length,...d.businesses.map(x=>x.name));DEPTS.splice(0,DEPTS.length,...[...new Set(d.departments.map(x=>x.name))])});
 const load=()=>fetch("/api/trainees").then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error||"Could not load trainees.");if(!Array.isArray(d))throw new Error("The server returned invalid trainee data.");S.t=d;S.loaded=true});
 const save=()=>{
  if(!S.loaded)return Promise.resolve();
@@ -334,7 +334,7 @@ const waiting=t=>{const g=t.logs[t.logs.length-1];return g.c&&g.s+1<ST.length?g.
 const seg=t=>'<div class="seg">'+MODS.map((m,mi)=>{const a=ST.filter(x=>x.m===mi),n=a.filter(x=>t.logs.some(g=>g.c&&g.s===ST.indexOf(x))).length;return `<i title="${m.n}"><b style="width:${n/a.length*100}%"></b></i>`}).join("")+'</div>';
 const inr=v=>v?"₹"+Number(v).toLocaleString("en-IN"):"–";
 const jd=v=>v?new Date(v+"T00:00").toLocaleDateString([],{dateStyle:"medium"}):"–";
-const info=t=>[["Branch",esc(t.branch||"–")],["Department",esc(t.dept)],["Designation",esc(t.desg||"–")],["Joining date",jd(t.join)],["Salary / month",inr(t.sal)],["Wage / day",inr(t.wage)]].filter(x=>allow("salary")||!/^(Salary|Wage)/.test(x[0]));
+const info=t=>[["Department",esc(t.dept)],["Designation",esc(t.desg||"–")],["Joining date",jd(t.join)],["Salary / month",inr(t.sal)],["Wage / day",inr(t.wage)]].filter(x=>allow("salary")||!/^(Salary|Wage)/.test(x[0]));
 const vmod=t=>{const next=waiting(t),sm=Math.max(...t.logs.map(q=>ST[q.s].m),next==null?0:ST[next].m);return[S.vm==null?sm:Math.max(0,Math.min(S.vm,sm)),sm]};
 const mshort=i=>MODS[ST[i].m].n.split(" · ")[0];
 const status=t=>{const l=cur(t);return !l?(waiting(t)!=null?["Ready for next task","s-rdy"]:["Completed","ok s-done"]):l.st?["In progress","s-prog"]:["Assigned – not started","s-asg"]};
@@ -384,11 +384,10 @@ function side(t){
  const detailTools=t?`<div class="side-section"><div class="side-label">Trainee</div>${S.user.role==="trainee"?"":'<button type="button" class="nav-link" data-a="back"><span class="nav-ico" aria-hidden="true">‹</span><span>All trainees</span></button>'}${allow("ename")?'<button type="button" class="nav-link" data-a="ename"><span class="nav-ico" aria-hidden="true">✎</span><span>Edit name</span></button>':""}${canAddTrainee()?'<button type="button" class="nav-link" data-a="accountopen"><span class="nav-ico" aria-hidden="true">🔑</span><span>Set login password</span></button>':""}${allow("del")?`<button type="button" class="nav-link danger-link" data-a="del" data-id="${t.id}"><span class="nav-ico" aria-hidden="true">×</span><span>Remove trainee</span></button>`:""}</div>`:"";
  return `<aside class="sb">${brand}<nav class="side-nav" aria-label="Main navigation"><div class="side-section"><div class="side-label">Navigation</div>${navButton("dashboard","▦","Dashboard")}<button type="button" class="nav-link${S.settings?" active":""}" data-a="settings-open"><span class="nav-ico" aria-hidden="true">⚙</span><span>Settings</span></button></div>${detailTools}${media?`<div class="side-section"><div class="side-label">Media</div>${media}</div>`:""}</nav><div class="sidebar-bottom"><div class="side-foot"><div class="side-brand"><span>DATA ANALYST TEAM</span><b>MAGNUS</b></div></div></aside>`;
 }
-// ---- Trainee cards, filtered by the search box (name, department, designation, branch)
-const filtered=()=>{const q=(S.q||"").trim().toLowerCase();return scoped().filter(t=>(S.view==="overview"||biz(t)===S.view)&&[t.name,t.dept,t.desg,t.branch,biz(t)].some(v=>String(v||"").toLowerCase().includes(q)))};
-const addBranches=(business=S.addBiz)=>{const org=S.options.businesses.find(x=>x.name===business);return S.options.branches.filter(x=>org&&x.business_id===org.id)};
-const addDepts=()=>{const branch=addBranches().find(x=>x.name===S.addBranch);return S.options.departments.filter(x=>branch&&x.branch_id===branch.id)};
-const addDesignations=()=>{const dept=addDepts().find(x=>x.name===S.addDept);return S.options.designations.filter(x=>dept&&x.department_id===dept.id)};
+// ---- Trainee cards, filtered by the search box (name, department, designation)
+const filtered=()=>{const q=(S.q||"").trim().toLowerCase();return scoped().filter(t=>(S.view==="overview"||biz(t)===S.view)&&[t.name,t.dept,t.desg,biz(t)].some(v=>String(v||"").toLowerCase().includes(q)))};
+const addDepts=(business=S.addBiz)=>{const org=S.options.businesses.find(x=>x.name===business);return S.options.departments.filter(x=>org&&x.business_id===org.id).filter((item,index,items)=>items.findIndex(other=>other.name===item.name)===index)};
+const addDesignations=()=>{const departments=addDepts().filter(x=>x.name===S.addDept),departmentIds=new Set(departments.map(x=>x.id));return S.options.designations.filter(x=>departmentIds.has(x.department_id)).filter((item,index,items)=>items.findIndex(other=>other.title===item.title)===index)};
 const canManageOrganization=()=>!!(S.user&&S.user.role==="developer");
 const addOrgOption=entity=>canManageOrganization()?`<option value="__add_${entity}__">＋ Add ${entity}</option>`:"";
 const addSelectOptions=(items,selected,value,label,emptyLabel,entity)=>{
@@ -396,19 +395,13 @@ const addSelectOptions=(items,selected,value,label,emptyLabel,entity)=>{
  return placeholder+items.map(item=>`<option value="${esc(value(item))}"${value(item)===selected?" selected":""}>${esc(label(item))}</option>`).join("")+addOrgOption(entity);
 };
 const addCategoryPanel=entity=>`<div id="add-category-${entity}" data-add-category-panel="${entity}" hidden><label class="fl">New ${entity} name<input id="add-category-name-${entity}" maxlength="120" placeholder="Enter ${entity} name"></label><div id="add-category-status-${entity}" class="lg-err" role="status"></div><div class="row"><button type="button" data-a="category-cancel" data-entity="${entity}">Cancel</button><button type="button" class="p" data-a="category-create" data-entity="${entity}">Add ${entity}</button></div></div>`;
-const addBranchParent=()=>{const business=S.options.businesses.find(x=>x.name===S.addBiz);return business?business.id:""};
-const addDepartmentParent=()=>{const branch=addBranches().find(x=>x.name===S.addBranch);return branch?branch.id:""};
+const addDepartmentParent=()=>{const business=S.options.businesses.find(x=>x.name===S.addBiz);return business?business.id:""};
 const addDesignationParent=()=>{const department=addDepts().find(x=>x.name===S.addDept);return department?department.id:""};
 const organizationParents=entity=>{
- if(entity==="branch")return S.options.businesses.map(x=>({id:x.id,label:x.name}));
- if(entity==="department")return S.options.branches.map(branch=>{
-  const business=S.options.businesses.find(x=>x.id===branch.business_id);
-  return{id:branch.id,label:[business&&business.name,branch.name].filter(Boolean).join(" · ")};
- });
+ if(entity==="department")return S.options.businesses.map(x=>({id:x.id,label:x.name}));
  if(entity==="designation")return S.options.departments.map(department=>{
-  const branch=S.options.branches.find(x=>x.id===department.branch_id);
-  const business=branch&&S.options.businesses.find(x=>x.id===branch.business_id);
-  return{id:department.id,label:[business&&business.name,branch&&branch.name,department.name].filter(Boolean).join(" · ")};
+  const business=S.options.businesses.find(x=>x.id===department.business_id);
+  return{id:department.id,label:[business&&business.name,department.name].filter(Boolean).join(" · ")};
  });
  return[];
 };
@@ -417,7 +410,7 @@ function openOrganization(entity,parentId=""){
  S.settings=false;S.organization=true;S.orgEntity=entity;S.orgParent=parentId||(organizationParents(entity)[0]||{}).id||"";S.orgName="";S.orgMsg="";render();
 }
 function organizationModal(){
- const labels={business:"Business",branch:"Branch",department:"Department",designation:"Designation"};
+ const labels={business:"Business",department:"Department",designation:"Designation"};
  const parents=organizationParents(S.orgEntity);
  const parent=S.orgEntity==="business"?"":`<label class="fl">Under<select id="org-parent">${parents.map(x=>`<option value="${esc(x.id)}"${x.id===S.orgParent?" selected":""}>${esc(x.label)}</option>`).join("")}</select></label>`;
  return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="org-title"><div class="bd" data-a="orgclose"></div><div class="mb"><h2 id="org-title">Manage organization</h2><label class="fl">Record type<select id="org-entity">${Object.entries(labels).map(([key,label])=>`<option value="${key}"${key===S.orgEntity?" selected":""}>${label}</option>`).join("")}</select></label>${parent}<label class="fl">${labels[S.orgEntity]} name<input id="org-name" value="${esc(S.orgName)}" maxlength="120"></label><div class="lg-err" role="status">${esc(S.orgMsg)}</div><div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="orgclose">Back to settings</button><button type="button" class="p" data-a="orgcreate"${S.orgEntity!=="business"&&!parents.length?" disabled":""}>Create ${labels[S.orgEntity]}</button></div></div></div>`;
@@ -436,15 +429,10 @@ async function createOrganizationRecord(){
   try{
    await loadOptions();
    if(S.add){
-    if(entity==="business"){S.addBiz=name;S.addBranch="";S.addDept="";S.addDesg=""}
-    if(entity==="branch"){
-     const business=S.options.businesses.find(x=>x.id===parentId);
-     S.addBiz=business?business.name:S.addBiz;S.addBranch=name;S.addDept="";S.addDesg="";
-    }
+    if(entity==="business"){S.addBiz=name;S.addDept="";S.addDesg=""}
     if(entity==="department"){
-     const branch=S.options.branches.find(x=>x.id===parentId);
-     const business=branch&&S.options.businesses.find(x=>x.id===branch.business_id);
-     S.addBiz=business?business.name:S.addBiz;S.addBranch=branch?branch.name:S.addBranch;S.addDept=name;S.addDesg="";
+     const business=S.options.businesses.find(x=>x.id===parentId);
+     S.addBiz=business?business.name:S.addBiz;S.addDept=name;S.addDesg="";
     }
     if(entity==="designation")S.addDesg=name;
    }
@@ -461,7 +449,7 @@ function permissionsModal(){
 }
 const canManageUsers=()=>!!(S.user&&["developer","business","business_hr","business_view"].includes(S.user.role));
 function settingsModal(){
- const organization=canManageOrganization()?'<button type="button" class="settings-action" data-a="orgopen"><span>Manage organization</span><small>Businesses, branches, departments and designations</small></button>':"";
+ const organization=canManageOrganization()?'<button type="button" class="settings-action" data-a="orgopen"><span>Manage organization</span><small>Businesses, departments and designations</small></button>':"";
  const userManagementDescription=S.user.role==="developer"?"Add and manage users, trainees, roles, and permissions":"Add and manage user accounts";
  const userManagement=canManageUsers()||canAddTrainee()?`<button type="button" class="settings-action" data-a="user-management-open"><span>User management</span><small>${userManagementDescription}</small></button>`:"";
  return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="settings-title"><div class="bd" data-a="settings-close"></div><div class="mb settings-modal"><h2 id="settings-title">Settings</h2><div class="mu">Manage your workspace preferences.</div><div class="settings-actions">${organization}${userManagement}<button type="button" class="settings-action" data-a="theme"><span>Appearance</span><small>Switch between light and dark theme</small></button></div><div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="settings-close">Close</button></div></div></div>`;
@@ -560,7 +548,7 @@ async function createUser(){
 }
 function openAddTrainee(business){
  S.settings=false;S.userManagement=false;S.organization=false;S.add=true;S.addmsg="";S.addDraft={name:"",password:"",date:new Date().toISOString().slice(0,10),salary:"",wage:""};
- S.addBiz=business||(S.view!=="overview"?S.view:(vbiz()[0]||""));S.addBranch=(addBranches(S.addBiz)[0]||{}).name||"";S.addDept=(addDepts()[0]||{}).name||"";S.addDesg=(addDesignations()[0]||{}).title||"";
+ S.addBiz=business||(S.view!=="overview"?S.view:(vbiz()[0]||""));S.addDept=(addDepts()[0]||{}).name||"";S.addDesg=(addDesignations()[0]||{}).title||"";
 }
 document.addEventListener("input",e=>{
  if(!S.userDraft)return;
@@ -598,7 +586,6 @@ function downloadPermissionConfig(){
  const contents=[
   "// Role and permission configuration for Magnus Trainee Tracker.",
   `const DEPTS = ${JSON.stringify(DEPTS,null,2)};`,
-  `const BRANCHES = ${JSON.stringify(BRANCHES,null,2)};`,
   `const BUSINESSES = ${JSON.stringify(BUSINESSES,null,2)};`,
   `const SUBVIEWS = ${JSON.stringify(SUBVIEWS,null,2)};`,
   `const ROLE_LABELS = ${JSON.stringify(ROLE_LABELS,null,2)};`,
@@ -613,24 +600,23 @@ function tcards(){
  const q=(S.q||"").trim().toLowerCase(),L=filtered();
  return L.length?'<div class="gl">'+L.map(t=>{const[s,c]=status(t),l=cur(t),n=done(t);return `<div class="card item" data-a="open" data-id="${t.id}">
  <div class="sp"><b>${esc(t.name)}</b><span class="chip ${c}">${s}</span></div>
- <div class="mu">${[S.view==="overview"&&q?biz(t):"",t.branch,t.dept,t.desg].filter(Boolean).map(esc).join(" · ")}${t.join?" · Joined "+jd(t.join):""}</div>
+ <div class="mu">${[S.view==="overview"&&q?biz(t):"",t.dept,t.desg].filter(Boolean).map(esc).join(" · ")}${t.join?" · Joined "+jd(t.join):""}</div>
  ${seg(t)}
  <div class="mu">${n}/${ST.length} tasks completed${l?` · Now: Step ${l.s+1} – ${esc(ST[l.s].n)}`:""}</div></div>`}).join("")+'</div>':'<div class="mu">'+emptyMsg()+'</div>';
 }
-// ---- Hierarchy: Business > Branch > Department > trainees
+// ---- Hierarchy: Business > Department > trainees
 const groupBy=(L,f)=>{const m=new Map();L.forEach(t=>{const k=f(t);if(!m.has(k))m.set(k,[]);m.get(k).push(t)});return[...m.entries()]};
 function hierTrainees(L){
  return '<div class="hy-ts">'+L.map(t=>{const[s,c]=status(t);return `<div class="hy-t item" data-a="open" data-id="${t.id}" role="button" tabindex="0"><b>${esc(t.name)}</b><span class="mu">${esc(t.desg||"No designation")}</span><span class="chip ${c}">${s}</span></div>`}).join("")+'</div>';
 }
-function hierBranches(L){
- return groupBy(L,t=>t.branch||"No branch").map(([br,bl])=>`<div class="hy-br"><div class="hy-h"><b>${esc(br)}</b><span class="mu">${bl.length} ${bl.length===1?"trainee":"trainees"}</span></div>`+
-  groupBy(bl,t=>t.dept||"No department").map(([dp,dl])=>`<div class="hy-d"><div class="hy-h"><b>${esc(dp)}</b><span class="mu">${dl.length}</span></div>${hierTrainees(dl)}</div>`).join("")+'</div>').join("");
+function hierDepartments(L){
+ return groupBy(L,t=>t.dept||"No department").map(([dp,dl])=>`<div class="hy-d"><div class="hy-h"><b>${esc(dp)}</b><span class="mu">${dl.length}</span></div>${hierTrainees(dl)}</div>`).join("");
 }
 function hierarchy(){
  const L=filtered();
  if(!L.length)return '<div class="mu">'+(S.t.length?"No trainees match your search.":"No trainees yet. Use Settings to add a trainee.")+'</div>';
- if(S.view!=="overview")return '<div class="card hy">'+hierBranches(L)+'</div>';
- return BIZ.map(b=>{const bl=L.filter(t=>biz(t)===b);return bl.length?`<div class="card hy"><div class="hy-h hy-top"><h2>${esc(b)}</h2><span class="mu">${bl.length} ${bl.length===1?"trainee":"trainees"}</span></div>${hierBranches(bl)}</div>`:""}).join("");
+ if(S.view!=="overview")return '<div class="card hy">'+hierDepartments(L)+'</div>';
+ return BIZ.map(b=>{const bl=L.filter(t=>biz(t)===b);return bl.length?`<div class="card hy"><div class="hy-h hy-top"><h2>${esc(b)}</h2><span class="mu">${bl.length} ${bl.length===1?"trainee":"trainees"}</span></div>${hierDepartments(bl)}</div>`:""}).join("");
 }
 const bstats=L=>{const dn=L.filter(t=>status(t)[0]==="Completed").length;return{n:L.length,dn,ip:L.length-dn}};
 function bizCards(){
@@ -692,15 +678,15 @@ function list(){
 }
 // ---- Add trainee pop-up form
 function addModal(){
- const branches=addBranches(),departments=addDepts(),designations=addDesignations();
+ const departments=addDepts(),designations=addDesignations();
  const draft=S.addDraft||{};
- return `<div class="ov" role="dialog" aria-modal="true"><div class="bd" data-a="mcancel"></div><div class="mb wide"><h2 style="margin-top:2px">Add trainee</h2><div class="fg"><label>Trainee name (login username)<input id="nm" placeholder="Full name" value="${esc(draft.name||"")}"></label><label>Login password<div class="pw-wrap"><input id="tp" type="password" minlength="6" autocomplete="new-password" value="${esc(draft.password||"")}">${passwordToggle("tp")}</div></label><label>Joining date<input id="jd" type="date" value="${esc(draft.date||new Date().toISOString().slice(0,10))}"></label><div><label>Business<select id="bz">${addSelectOptions(vbiz(),S.addBiz,x=>x,x=>x,"Choose business…","business")}</select></label>${addCategoryPanel("business")}</div><div><label>Branch<select id="br">${addSelectOptions(branches,S.addBranch,x=>x.name,x=>x.name,"Choose branch…","branch")}</select></label>${addCategoryPanel("branch")}</div><div><label>Department<select id="dp">${addSelectOptions(departments,S.addDept,x=>x.name,x=>x.name,"Choose department…","department")}</select></label>${addCategoryPanel("department")}</div><div><label>Designation<select id="ds">${addSelectOptions(designations,S.addDesg,x=>x.title,x=>x.title,"Choose designation…","designation")}</select></label>${addCategoryPanel("designation")}</div><label>Salary (₹ per month)<input id="sl" type="number" min="0" inputmode="numeric" placeholder="0" value="${esc(draft.salary||"")}"></label><label>Wage (₹ per day)<input id="wg" type="number" min="0" inputmode="numeric" placeholder="0" value="${esc(draft.wage||"")}"></label></div><div id="add-error" class="lg-err" role="status">${esc(S.addmsg||"")}</div><div class="mu" style="margin-top:12px">The trainee will sign in using their name and this password. To add a missing category, choose “＋ Add …” and enter its name. Step 1 is assigned right now; each next task unlocks after completion.</div><div class="row" style="margin-top:16px;justify-content:flex-end"><button data-a="mcancel">Cancel</button><button class="p" data-a="add"${branches.length&&departments.length&&designations.length?"":" disabled"}>Create login &amp; assign Step 1</button></div></div></div>`;
+ return `<div class="ov" role="dialog" aria-modal="true"><div class="bd" data-a="mcancel"></div><div class="mb wide"><h2 style="margin-top:2px">Add trainee</h2><div class="fg"><label>Trainee name (login username)<input id="nm" placeholder="Full name" value="${esc(draft.name||"")}"></label><label>Login password<div class="pw-wrap"><input id="tp" type="password" minlength="6" autocomplete="new-password" value="${esc(draft.password||"")}">${passwordToggle("tp")}</div></label><label>Joining date<input id="jd" type="date" value="${esc(draft.date||new Date().toISOString().slice(0,10))}"></label><div><label>Business<select id="bz">${addSelectOptions(vbiz(),S.addBiz,x=>x,x=>x,"Choose business…","business")}</select></label>${addCategoryPanel("business")}</div><div><label>Department<select id="dp">${addSelectOptions(departments,S.addDept,x=>x.name,x=>x.name,"Choose department…","department")}</select></label>${addCategoryPanel("department")}</div><div><label>Designation<select id="ds">${addSelectOptions(designations,S.addDesg,x=>x.title,x=>x.title,"Choose designation…","designation")}</select></label>${addCategoryPanel("designation")}</div><label>Salary (₹ per month)<input id="sl" type="number" min="0" inputmode="numeric" placeholder="0" value="${esc(draft.salary||"")}"></label><label>Wage (₹ per day)<input id="wg" type="number" min="0" inputmode="numeric" placeholder="0" value="${esc(draft.wage||"")}"></label></div><div id="add-error" class="lg-err" role="status">${esc(S.addmsg||"")}</div><div class="mu" style="margin-top:12px">The trainee will sign in using their name and this password. To add a missing category, choose “＋ Add …” and enter its name. Step 1 is assigned right now; each next task unlocks after completion.</div><div class="row" style="margin-top:16px;justify-content:flex-end"><button data-a="mcancel">Cancel</button><button class="p" data-a="add"${departments.length&&designations.length?"":" disabled"}>Create login &amp; assign Step 1</button></div></div></div>`;
 }
 function showAddCategory(entity){
  if(!canManageOrganization())return;
  document.querySelectorAll("[data-add-category-panel]").forEach(panel=>{panel.hidden=panel.dataset.addCategoryPanel!==entity});
- const selects={business:"bz",branch:"br",department:"dp",designation:"ds"};
- const selected={business:S.addBiz,branch:S.addBranch,department:S.addDept,designation:S.addDesg};
+ const selects={business:"bz",department:"dp",designation:"ds"};
+ const selected={business:S.addBiz,department:S.addDept,designation:S.addDesg};
  const select=document.getElementById(selects[entity]);
  if(select)select.value=selected[entity]||"";
  const input=document.getElementById(`add-category-name-${entity}`);
@@ -708,16 +694,16 @@ function showAddCategory(entity){
 }
 async function createAddCategory(entity){
  if(!canManageOrganization())return;
- const labels={business:"Business",branch:"Branch",department:"Department",designation:"Designation"};
+ const labels={business:"Business",department:"Department",designation:"Designation"};
  if(!Object.prototype.hasOwnProperty.call(labels,entity))return;
  const input=document.getElementById(`add-category-name-${entity}`);
  const status=document.getElementById(`add-category-status-${entity}`);
  const submit=document.querySelector(`[data-a="category-create"][data-entity="${entity}"]`);
  const name=(input.value||"").trim();
  if(!name){status.textContent=`Enter a ${entity} name.`;input.focus();return}
- const parents={branch:addBranchParent,department:addDepartmentParent,designation:addDesignationParent};
+ const parents={department:addDepartmentParent,designation:addDesignationParent};
  const parentId=parents[entity]?parents[entity]():null;
- if(entity!=="business"&&!parentId){status.textContent=`Select a ${entity==="branch"?"business":entity==="department"?"branch":"department"} first.`;return}
+ if(entity!=="business"&&!parentId){status.textContent=`Select a ${entity==="department"?"business":"department"} first.`;return}
  submit.disabled=true;
  status.textContent=`Adding ${entity}…`;
  try{
@@ -729,8 +715,7 @@ async function createAddCategory(entity){
   }catch(error){
    throw new Error(`${labels[entity]} was created, but the dropdowns could not refresh: ${error instanceof Error?error.message:String(error)}`);
   }
-  if(entity==="business"){S.addBiz=name;S.addBranch="";S.addDept="";S.addDesg=""}
-  if(entity==="branch"){S.addBranch=name;S.addDept="";S.addDesg=""}
+  if(entity==="business"){S.addBiz=name;S.addDept="";S.addDesg=""}
   if(entity==="department"){S.addDept=name;S.addDesg=""}
   if(entity==="designation")S.addDesg=name;
   S.addmsg="";
@@ -823,8 +808,8 @@ document.addEventListener("click",e=>{
  if(a==="category-create")return createAddCategory(b.dataset.entity);
  if(a==="category-cancel"){
   document.querySelectorAll("[data-add-category-panel]").forEach(panel=>{panel.hidden=true});
-  const selects={business:"bz",branch:"br",department:"dp",designation:"ds"};
-  const selected={business:S.addBiz,branch:S.addBranch,department:S.addDept,designation:S.addDesg};
+  const selects={business:"bz",department:"dp",designation:"ds"};
+  const selected={business:S.addBiz,department:S.addDept,designation:S.addDesg};
   const select=document.getElementById(selects[b.dataset.entity]);
   if(select)select.value=selected[b.dataset.entity]||"";
   const input=document.getElementById(`add-category-name-${b.dataset.entity}`);
@@ -877,9 +862,9 @@ document.addEventListener("click",e=>{
  if(a==="hyremove")return hierRemove(b.dataset.b);
  if(a==="add"){const n=document.getElementById("nm").value.trim();if(!n)return document.getElementById("nm").focus();
   const password=document.getElementById("tp").value;if(password.length<6){S.addmsg="Password must be at least 6 characters.";document.getElementById("add-error").textContent=S.addmsg;return}
-  const d=now(),g=i=>document.getElementById(i).value.trim(),business=g("bz"),department=g("dp"),branch=g("br"),designation=g("ds");
-  if(!vbiz().includes(business)||!addDepts().some(x=>sameName(x.name,department))||!addBranches(business).some(x=>sameName(x.name,branch))||!addDesignations().some(x=>sameName(x.title,designation))){S.addmsg="Choose an available business, branch, department, and designation.";render();return}
-  S.t.push({id:crypto.randomUUID(),biz:business,name:n,dept:department,branch,desg:designation,join:g("jd"),sal:g("sl"),wage:g("wg"),start:d,logs:[{s:0,a:d}],account_password:password});S.add=false;S.addDraft=null;S.addmsg="";S.userManagement=true}
+  const d=now(),g=i=>document.getElementById(i).value.trim(),business=g("bz"),department=g("dp"),designation=g("ds");
+  if(!vbiz().includes(business)||!addDepts().some(x=>sameName(x.name,department))||!addDesignations().some(x=>sameName(x.title,designation))){S.addmsg="Choose an available business, department, and designation.";render();return}
+  S.t.push({id:crypto.randomUUID(),biz:business,name:n,dept:department,desg:designation,join:g("jd"),sal:g("sl"),wage:g("wg"),start:d,logs:[{s:0,a:d}],account_password:password});S.add=false;S.addDraft=null;S.addmsg="";S.userManagement=true}
  else if(a==="nav-dashboard"){S.nav="dashboard";S.view="overview";S.bv="overview";S.q=""}
  else if(a==="nav-trainees"){S.nav="trainees";S.view="overview";S.bv="overview";S.q=""}
  else if(a==="nav-businesses"){S.nav="businesses";S.view="overview";S.bv="overview";S.q=""}
@@ -894,7 +879,7 @@ document.addEventListener("click",e=>{
  else if(a==="prev"){S.vm=vmod(t)[0]-1}
  else if(a==="next"){const[v,m]=vmod(t);if(v<m)S.vm=v+1;else if(waiting(t)!=null&&ST[waiting(t)].m===v+1){const step=waiting(t),d=now();t.logs.push({s:step,a:d,st:d});S.vm=null;if(S.user.role==="trainee"&&ST[step].t==="VIDEO"&&vfolder(biz(t),step))autoPlayVideoStep=step}}
  else if(a==="score"){S.modal=+b.dataset.mi}
- else if(a==="addopen"){S.add=true;S.addmsg="";S.addDraft={name:"",password:"",date:new Date().toISOString().slice(0,10),salary:"",wage:""};S.addBiz=b.dataset.b|| (S.view!=="overview"?S.view:(vbiz()[0]||""));S.addBranch=(addBranches(S.addBiz)[0]||{}).name||"";S.addDept=(addDepts()[0]||{}).name||"";S.addDesg=(addDesignations()[0]||{}).title||""}
+ else if(a==="addopen"){S.add=true;S.addmsg="";S.addDraft={name:"",password:"",date:new Date().toISOString().slice(0,10),salary:"",wage:""};S.addBiz=b.dataset.b|| (S.view!=="overview"?S.view:(vbiz()[0]||""));S.addDept=(addDepts()[0]||{}).name||"";S.addDesg=(addDesignations()[0]||{}).title||""}
  else if(a==="accountopen"){S.accountModal=true;S.accountDone=false;S.accountMsg=""}
  else if(a==="accountcancel"){S.accountModal=false;S.accountDone=false;S.accountMsg=""}
  else if(a==="settings-open"){S.userManagement=false;S.settings=true}
@@ -953,11 +938,7 @@ document.addEventListener("change",e=>{
  if(e.target.id==="org-parent"){S.orgParent=e.target.value;return}
  if(e.target.id==="bz"){
   if(e.target.value==="__add_business__"&&canManageOrganization())return showAddCategory("business");
-  S.addBiz=e.target.value;S.addBranch=(addBranches()[0]||{}).name||"";S.addDept=(addDepts()[0]||{}).name||"";S.addDesg=(addDesignations()[0]||{}).title||"";S.addmsg="";render();return
- }
- if(e.target.id==="br"){
-  if(e.target.value==="__add_branch__"&&canManageOrganization())return showAddCategory("branch");
-  S.addBranch=e.target.value;S.addDept=(addDepts()[0]||{}).name||"";S.addDesg=(addDesignations()[0]||{}).title||"";S.addmsg="";render();return
+  S.addBiz=e.target.value;S.addDept=(addDepts()[0]||{}).name||"";S.addDesg=(addDesignations()[0]||{}).title||"";S.addmsg="";render();return
  }
  if(e.target.id==="dp"){
   if(e.target.value==="__add_department__"&&canManageOrganization())return showAddCategory("department");
@@ -1452,8 +1433,8 @@ document.addEventListener("change",e=>{
 });
 
 function csv(){
- const r=[["Trainee","Business","Branch","Department","Designation","Joining date","Salary","Wage","Step","Module","Type","Task","Monitored by","Assigned","Started","Completed"]];
- scoped().forEach(t=>t.logs.forEach(g=>{const x=ST[g.s];r.push([t.name,biz(t),t.branch||"",t.dept,t.desg||"",t.join||"",allow("salary")?(t.sal||""):"",allow("salary")?(t.wage||""):"",g.s+1,MODS[x.m].n,x.t,x.n,x.by,g.a||"",g.st||"",g.c||""])}));
+ const r=[["Trainee","Business","Department","Designation","Joining date","Salary","Wage","Step","Module","Type","Task","Monitored by","Assigned","Started","Completed"]];
+ scoped().forEach(t=>t.logs.forEach(g=>{const x=ST[g.s];r.push([t.name,biz(t),t.dept,t.desg||"",t.join||"",allow("salary")?(t.sal||""):"",allow("salary")?(t.wage||""):"",g.s+1,MODS[x.m].n,x.t,x.n,x.by,g.a||"",g.st||"",g.c||""])}));
  const s=r.map(a=>a.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(",")).join("\n");
  const u=URL.createObjectURL(new Blob([s],{type:"text/csv"})),a=document.createElement("a");a.href=u;a.download="trainee-log.csv";a.click();
 }

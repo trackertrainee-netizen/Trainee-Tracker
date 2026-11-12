@@ -183,14 +183,26 @@ class DataBase:
         )
 
     def list_options(self):
+        businesses = self.client.table("businesses").select("id,name").execute().data
+        branches = self.client.table("branches").select(
+            "id,business_id"
+        ).execute().data
+        business_by_branch = {
+            branch["id"]: branch["business_id"] for branch in branches
+        }
+        departments = self.client.table("departments").select(
+            "id,branch_id,name"
+        ).execute().data
         return {
-            "businesses": self.client.table("businesses").select("id,name").execute().data,
-            "branches": self.client.table("branches").select(
-                "id,business_id,name"
-            ).execute().data,
-            "departments": self.client.table("departments").select(
-                "id,branch_id,name"
-            ).execute().data,
+            "businesses": businesses,
+            "departments": [
+                {
+                    "id": department["id"],
+                    "business_id": business_by_branch.get(department["branch_id"]),
+                    "name": department["name"],
+                }
+                for department in departments
+            ],
             "designations": self.client.table("designations").select(
                 "id,department_id,title"
             ).execute().data,
@@ -224,8 +236,7 @@ class DataBase:
     def create_organization_record(self, entity, name, parent_id=None):
         definitions = {
             "business": ("businesses", "name", None, None),
-            "branch": ("branches", "name", "businesses", "business_id"),
-            "department": ("departments", "name", "branches", "branch_id"),
+            "department": ("departments", "name", "businesses", "business_id"),
             "designation": ("designations", "title", "departments", "department_id"),
         }
         if not isinstance(entity, str) or entity not in definitions:
@@ -238,6 +249,7 @@ class DataBase:
 
         table, name_column, parent_table, parent_column = definitions[entity]
         payload = {name_column: name}
+        branch_ids = set()
         if parent_table:
             try:
                 parent_id = str(UUID(str(parent_id)))
@@ -253,16 +265,44 @@ class DataBase:
             )
             if not parent:
                 raise ValueError("Choose an existing parent organization.")
-            payload[parent_column] = parent_id
+            if entity == "department":
+                branches = (
+                    self.client.table("branches")
+                    .select("id")
+                    .eq("business_id", parent_id)
+                    .execute()
+                    .data
+                )
+                if not branches:
+                    raise ValueError(
+                        "This business has no compatible existing organization record."
+                    )
+                payload["branch_id"] = branches[0]["id"]
+                branch_ids = {branch["id"] for branch in branches}
+            else:
+                payload[parent_column] = parent_id
 
-        duplicate_query = (
-            self.client.table(table)
-            .select("id")
-            .eq(name_column, payload[name_column])
-        )
-        if parent_column:
-            duplicate_query = duplicate_query.eq(parent_column, parent_id)
-        if duplicate_query.limit(1).execute().data:
+        if entity == "department":
+            existing_departments = (
+                self.client.table(table)
+                .select("id,branch_id")
+                .eq(name_column, payload[name_column])
+                .execute()
+                .data
+            )
+            duplicate = any(
+                row["branch_id"] in branch_ids for row in existing_departments
+            )
+        else:
+            duplicate_query = (
+                self.client.table(table)
+                .select("id")
+                .eq(name_column, payload[name_column])
+            )
+            if parent_column:
+                duplicate_query = duplicate_query.eq(parent_column, parent_id)
+            duplicate = bool(duplicate_query.limit(1).execute().data)
+        if duplicate:
             raise ValueError(f"A {entity} with that name already exists.")
 
         return self.client.table(table).insert(payload).execute().data
@@ -404,19 +444,40 @@ class DataBase:
 
     def _designation_id(self, item):
         business = self._one("businesses", "name", item.get("biz"))
-        branch = self._one(
-            "branches", "name", item.get("branch"), business_id=business["id"]
+        branches = (
+            self.client.table("branches")
+            .select("id")
+            .eq("business_id", business["id"])
+            .execute()
+            .data
         )
-        department = self._one(
-            "departments", "name", item.get("dept"), branch_id=branch["id"]
+        branch_ids = {branch["id"] for branch in branches}
+        departments = (
+            self.client.table("departments")
+            .select("id,branch_id")
+            .eq("name", item.get("dept"))
+            .execute()
+            .data
         )
-        designation = self._one(
-            "designations",
-            "title",
-            item.get("desg"),
-            department_id=department["id"],
-        )
-        return designation["id"]
+        department_ids = [
+            department["id"]
+            for department in departments
+            if department["branch_id"] in branch_ids
+        ]
+        if not department_ids:
+            raise ValueError("No matching department was found for this trainee.")
+        for department_id in department_ids:
+            try:
+                designation = self._one(
+                    "designations",
+                    "title",
+                    item.get("desg"),
+                    department_id=department_id,
+                )
+            except ValueError:
+                continue
+            return designation["id"]
+        raise ValueError("No matching designation was found for this trainee.")
 
     def _one(self, table, column, value, **filters):
         if not isinstance(value, str) or not value.strip():

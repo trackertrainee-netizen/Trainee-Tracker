@@ -129,9 +129,9 @@ def refresh_auth_cookies(response):
 
 def _profile_payload(database, profile):
     result = dict(profile)
+    result.pop("branch_id", None)
     for field, table in (
         ("business_id", "businesses"),
-        ("branch_id", "branches"),
         ("department_id", "departments"),
     ):
         value = result.get(field)
@@ -197,8 +197,6 @@ def _can_manage_staff_profile(profile):
     if manager["role"] == "business_hr" and not manager.get("business_id"):
         return True
     if profile.get("business_id") != manager.get("business_id"):
-        return False
-    if manager.get("branch_id") and profile.get("branch_id") != manager["branch_id"]:
         return False
     if manager.get("department_id") and profile.get("department_id") != manager["department_id"]:
         return False
@@ -630,7 +628,6 @@ def create_user_account():
             "business_id": business_id,
         }
         if not _is_developer():
-            profile["branch_id"] = g.profile.get("branch_id")
             profile["department_id"] = g.profile.get("department_id")
         try:
             admin.table("profiles").upsert(profile).execute()
@@ -739,7 +736,7 @@ def update_user_account(user_id):
         if _is_developer() and (
             role == "developer" or business_id != profile.get("business_id")
         ):
-            updated_profile.update({"branch_id": None, "department_id": None})
+            updated_profile["department_id"] = None
         admin.table("profiles").update(updated_profile).eq("id", user_id).execute()
         auth_attributes = {}
         if username != profile["full_name"]:
@@ -861,9 +858,9 @@ def set_trainee_login(trainee_id):
             g.profile["role"] == "business_hr" and g.profile.get("business_id")
         ):
             scope = _profile_payload(g.database, g.profile)
-            for field in ("business", "branch", "department"):
+            for field in ("business", "department"):
                 allowed = scope.get(field)
-                if allowed and trainee.get({"business": "biz", "branch": "branch", "department": "dept"}[field]) != allowed.get("name"):
+                if allowed and trainee.get({"business": "biz", "department": "dept"}[field]) != allowed.get("name"):
                     return jsonify(error="That trainee is outside your account scope."), 403
                 if field == "business" and not allowed:
                     return jsonify(error="Your account has no business scope."), 403
