@@ -353,7 +353,7 @@ function side(t){
  const mediaButton=(permission,action,icon,label)=>allow(permission)?`<button type="button" class="nav-link" data-a="${action}"><span class="nav-ico" aria-hidden="true">${icon}</span><span>${label}</span></button>`:"";
  const media=[mediaButton("upload","uploadopen","↑","Upload video"),S.user.role==="trainee"?"":mediaButton("watch","videoopen","▷","Watch video"),mediaButton("map","mapopen","↗","Map videos"),S.user.role==="business"?'<button type="button" class="nav-link" data-a="replay-inbox-open"><span class="nav-ico" aria-hidden="true">↻</span><span>Replay requests</span></button>':""].filter(Boolean).join("");
  const detailTools=t?`<div class="side-section"><div class="side-label">Trainee</div>${S.user.role==="trainee"?"":'<button type="button" class="nav-link" data-a="back"><span class="nav-ico" aria-hidden="true">‹</span><span>All trainees</span></button>'}${allow("ename")?'<button type="button" class="nav-link" data-a="ename"><span class="nav-ico" aria-hidden="true">✎</span><span>Edit name</span></button>':""}${canAddTrainee()?'<button type="button" class="nav-link" data-a="accountopen"><span class="nav-ico" aria-hidden="true">🔑</span><span>Set login password</span></button>':""}${allow("del")?`<button type="button" class="nav-link danger-link" data-a="del" data-id="${t.id}"><span class="nav-ico" aria-hidden="true">×</span><span>Remove trainee</span></button>`:""}</div>`:"";
- return `<aside class="sb">${brand}<nav class="side-nav" aria-label="Main navigation"><div class="side-section"><div class="side-label">Navigation</div>${navButton("dashboard","▦","Dashboard")}${S.user.role==="trainee"?"":navButton("businesses","▣","Businesses")}<button type="button" class="nav-link${S.settings?" active":""}" data-a="settings-open"><span class="nav-ico" aria-hidden="true">⚙</span><span>Settings</span></button></div>${detailTools}${media?`<div class="side-section"><div class="side-label">Media</div>${media}</div>`:""}</nav><div class="sidebar-bottom"><div class="side-foot"><div class="side-brand"><span>DATA ANALYST TEAM</span><b>MAGNUS</b></div></div></aside>`;
+ return `<aside class="sb">${brand}<nav class="side-nav" aria-label="Main navigation"><div class="side-section"><div class="side-label">Navigation</div>${navButton("dashboard","▦","Dashboard")}<button type="button" class="nav-link${S.settings?" active":""}" data-a="settings-open"><span class="nav-ico" aria-hidden="true">⚙</span><span>Settings</span></button></div>${detailTools}${media?`<div class="side-section"><div class="side-label">Media</div>${media}</div>`:""}</nav><div class="sidebar-bottom"><div class="side-foot"><div class="side-brand"><span>DATA ANALYST TEAM</span><b>MAGNUS</b></div></div></aside>`;
 }
 // ---- Trainee cards, filtered by the search box (name, department, designation, branch)
 const filtered=()=>{const q=(S.q||"").trim().toLowerCase();return scoped().filter(t=>(S.view==="overview"||biz(t)===S.view)&&[t.name,t.dept,t.desg,t.branch,biz(t)].some(v=>String(v||"").toLowerCase().includes(q)))};
@@ -538,8 +538,8 @@ function hierarchy(){
 }
 const bstats=L=>{const dn=L.filter(t=>status(t)[0]==="Completed").length;return{n:L.length,dn,ip:L.length-dn}};
 function bizCards(){
- return '<div class="bg">'+vbiz().map(b=>{const k=bstats(scoped().filter(t=>biz(t)===b));return `<div class="card bz">
-  <div class="sp"><button type="button" class="business-open" data-a="openbiz" data-b="${esc(b)}"><b>${esc(b)}</b></button></div>
+ return '<div class="bg">'+vbiz().map(b=>{const k=bstats(scoped().filter(t=>biz(t)===b));return `<div class="card bz item biz-card" data-a="openbiz" data-b="${esc(b)}" role="button" tabindex="0" aria-label="View ${esc(b)} trainees">
+  <div class="sp"><b>${esc(b)}</b></div>
   <div class="bn${k.n?"":" zero"}">${k.n}</div><div class="mu">${k.n===1?"trainee":"trainees"}</div>
   <div class="bs mu"><span>${k.ip} in progress</span><span>${k.dn} completed</span></div></div>`}).join("")+'</div>';
 }
@@ -1290,6 +1290,7 @@ document.addEventListener("keydown",e=>{
  if(S.video&&S.user&&S.user.role==="trainee"){
   if(["Escape","PrintScreen","ArrowLeft","ArrowRight"].includes(e.key)){e.preventDefault();e.stopImmediatePropagation();return}
  }
+ if((e.key==="Enter"||e.key===" ")&&e.target.classList&&e.target.classList.contains("biz-card")){e.preventDefault();e.target.click();return}
  if(e.key==="Escape"){
   const profileMenu=document.querySelector(".profile-menu");
   if(profileMenu&&profileMenu.open){profileMenu.open=false;profileMenu.querySelector("summary").focus();return}
