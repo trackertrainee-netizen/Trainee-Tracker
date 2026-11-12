@@ -192,7 +192,7 @@ const mv=mi=>ST.filter(x=>x.m===mi&&x.t==="VIDEO").reduce((a,x)=>a+x.min,0);
 // ---- State
 const BIZ=BUSINESSES;
 const biz=t=>t.biz||"";
-let S={t:[],sel:null,upload:false,video:false,videoStep:null,videoAutoplay:false,replayGateStep:null,replayGateMsg:"",replayRequestConfirmStep:null,completedVideoSteps:[],videoReplayRequests:[],videoCompletionError:"",videoFinished:false,videoWatchSaved:false,videoReplayRequested:false,videoReturnAt:null,videoLatestTime:0,videoSeekTarget:null,hls:null,view:"overview",bv:"overview",nav:"dashboard",map:false,replayInbox:false,replayInboxData:[],replayInboxMsg:"",pendingReplayCount:0,userListModal:false,managedUsers:[],usersLoading:false,usersMsg:"",userReturnToList:false,settings:false,userManagement:false,userModal:false,userDraft:null,userMsg:"",organization:false,permissions:false,permissionDraft:null,permissionMsg:"",accountModal:false,accountDone:false,accountMsg:"",orgEntity:"business",orgParent:"",orgName:"",orgMsg:"",vmap:{},folders:[],mb:"Magnus",mm:0,mt:null,mf:"",mplay:"",mmsg:"",mfstat:"",himg:{},hmsg:{},user:null,options:{businesses:[],branches:[],departments:[],designations:[]},addBiz:"",addBranch:"",addDept:"",addDesg:"",addmsg:"",loginmsg:""};
+let S={t:[],sel:null,upload:false,video:false,videoStep:null,videoAutoplay:false,replayGateStep:null,replayGateMsg:"",replayRequestConfirmStep:null,completedVideoSteps:[],videoReplayRequests:[],videoCompletionError:"",videoFinished:false,videoWatchSaved:false,videoReplayRequested:false,videoReturnAt:null,videoLatestTime:0,videoSeekTarget:null,hls:null,view:"overview",bv:"overview",nav:"dashboard",map:false,replayInbox:false,replayInboxData:[],replayInboxMsg:"",pendingReplayCount:0,userListModal:false,managedUsers:[],usersLoading:false,usersMsg:"",userSearch:"",userReturnToList:false,settings:false,userManagement:false,userModal:false,userDraft:null,userMsg:"",organization:false,permissions:false,permissionDraft:null,permissionMsg:"",accountModal:false,accountDone:false,accountMsg:"",orgEntity:"business",orgParent:"",orgName:"",orgMsg:"",vmap:{},folders:[],mb:"Magnus",mm:0,mt:null,mf:"",mplay:"",mmsg:"",mfstat:"",himg:{},hmsg:{},user:null,options:{businesses:[],branches:[],departments:[],designations:[]},addBiz:"",addBranch:"",addDept:"",addDesg:"",addmsg:"",loginmsg:""};
 let activeVideoUpload=null,replayNotificationTimer=null;
 // ---- Supabase Auth-backed roles
 const sameName=(a,b)=>String(a||"").trim().toLowerCase()===String(b||"").trim().toLowerCase();
@@ -233,7 +233,7 @@ const roleLabel=()=>S.user?(ROLE_LABELS[S.user.role]||S.user.role):"";
 const scopeLabel=()=>{const u=S.user;if(!u)return"";if(ALLBIZ(u))return"All businesses";
  if(u.business&&u.business.name)return [u.business.name,u.branch&&u.branch.name,u.department&&u.department.name].filter(Boolean).join(" · ");
  return""};
-const initView=()=>{S.sel=null;S.vm=null;S.q="";S.bv="overview";S.nav="dashboard";S.modal=null;S.edit=false;S.add=false;S.accountModal=false;S.accountDone=false;S.accountMsg="";S.upload=false;S.video=false;S.videoStep=null;S.replayGateStep=null;S.replayGateMsg="";S.replayRequestConfirmStep=null;S.completedVideoSteps=[];S.videoReplayRequests=[];S.videoCompletionError="";S.videoFinished=false;S.videoWatchSaved=false;S.videoReplayRequested=false;S.videoReturnAt=null;S.videoLatestTime=0;S.videoSeekTarget=null;S.map=false;S.replayInbox=false;S.replayInboxData=[];S.replayInboxMsg="";S.pendingReplayCount=0;S.settings=false;S.userManagement=false;S.userModal=false;S.userListModal=false;S.userDraft=null;S.userMsg="";S.managedUsers=[];S.usersLoading=false;S.usersMsg="";S.userReturnToList=false;S.organization=false;S.permissions=false;S.permissionDraft=null;S.view=oneBiz()?vbiz()[0]:"overview"};
+const initView=()=>{S.sel=null;S.vm=null;S.q="";S.bv="overview";S.nav="dashboard";S.modal=null;S.edit=false;S.add=false;S.accountModal=false;S.accountDone=false;S.accountMsg="";S.upload=false;S.video=false;S.videoStep=null;S.replayGateStep=null;S.replayGateMsg="";S.replayRequestConfirmStep=null;S.completedVideoSteps=[];S.videoReplayRequests=[];S.videoCompletionError="";S.videoFinished=false;S.videoWatchSaved=false;S.videoReplayRequested=false;S.videoReturnAt=null;S.videoLatestTime=0;S.videoSeekTarget=null;S.map=false;S.replayInbox=false;S.replayInboxData=[];S.replayInboxMsg="";S.pendingReplayCount=0;S.settings=false;S.userManagement=false;S.userModal=false;S.userListModal=false;S.userDraft=null;S.userMsg="";S.managedUsers=[];S.usersLoading=false;S.usersMsg="";S.userSearch="";S.userReturnToList=false;S.organization=false;S.permissions=false;S.permissionDraft=null;S.view=oneBiz()?vbiz()[0]:"overview"};
 async function login(username,password){
  const response=await fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username,password})});
  const result=await response.json().catch(()=>({}));
@@ -495,9 +495,11 @@ function userModal(){
 }
 function managedUsersModal(){
  if(!canManageUsers())return "";
- const rows=S.managedUsers.map(user=>`<tr><td>${esc(user.username)}</td><td>${esc(ROLE_LABELS[user.role]||user.role)}</td><td>${esc(user.business||"—")}</td><td><div class="map-act"><button type="button" class="sm" data-a="user-edit" data-id="${esc(user.id)}">Edit</button><button type="button" class="sm dgr" data-a="user-delete" data-id="${esc(user.id)}"${user.id===S.user.id?" disabled":""}>Remove</button></div></td></tr>`).join("");
- const content=S.usersLoading?'<div class="mu">Loading users…</div>':S.usersMsg&&!S.managedUsers.length?`<div class="lg-err" role="status">${esc(S.usersMsg)}</div>`:rows?`<div class="sc"><table><tr><th>Username</th><th>Role</th><th>Business</th><th></th></tr>${rows}</table></div>`:'<div class="mu">No user accounts found.</div>';
- return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="managed-users-title"><div class="bd" data-a="managed-users-close"></div><div class="mb wide"><h2 id="managed-users-title">Manage users</h2><div class="mu" role="status">${S.usersMsg&&!S.usersLoading&&S.managedUsers.length?esc(S.usersMsg):""}</div>${content}<div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="managed-users-close">Back</button><button type="button" class="p" data-a="user-add-from-list">Add user</button></div></div></div>`;
+ const query=(S.userSearch||"").trim().toLowerCase();
+ const users=S.managedUsers.filter(user=>[user.username,ROLE_LABELS[user.role]||user.role,user.role,user.business].some(value=>String(value||"").toLowerCase().includes(query)));
+ const rows=users.map(user=>`<tr><td>${esc(user.username)}</td><td>${esc(ROLE_LABELS[user.role]||user.role)}</td><td>${esc(user.business||"—")}</td><td><div class="map-act"><button type="button" class="sm" data-a="user-edit" data-id="${esc(user.id)}">Edit</button><button type="button" class="sm dgr" data-a="user-delete" data-id="${esc(user.id)}"${user.id===S.user.id?" disabled":""}>Remove</button></div></td></tr>`).join("");
+ const content=S.usersLoading?'<div class="mu">Loading users…</div>':S.usersMsg&&!S.managedUsers.length?`<div class="lg-err" role="status">${esc(S.usersMsg)}</div>`:rows?`<div class="sc"><table><tr><th>Username</th><th>Role</th><th>Business</th><th></th></tr>${rows}</table></div>`:S.managedUsers.length?'<div class="mu">No users match your search.</div>':'<div class="mu">No user accounts found.</div>';
+ return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="managed-users-title"><div class="bd" data-a="managed-users-close"></div><div class="mb wide"><h2 id="managed-users-title">Manage users</h2><label class="managed-user-search"><input id="managed-users-search" type="search" value="${esc(S.userSearch)}" placeholder="Search by name, business, or role…" aria-label="Search users by name, business, or role" autocomplete="off"></label><div class="mu" role="status">${S.usersMsg&&!S.usersLoading&&S.managedUsers.length?esc(S.usersMsg):""}</div>${content}<div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="managed-users-close">Back</button><button type="button" class="p" data-a="user-add-from-list">Add user</button></div></div></div>`;
 }
 async function loadManagedUsers(){
  S.usersLoading=true;S.usersMsg="Loading user accounts…";
@@ -515,7 +517,7 @@ async function loadManagedUsers(){
 }
 async function openManagedUsers(){
  if(!canManageUsers())return;
- S.userManagement=false;S.userListModal=true;S.managedUsers=[];S.usersLoading=true;S.usersMsg="Loading user accounts…";render();
+ S.userManagement=false;S.userListModal=true;S.managedUsers=[];S.userSearch="";S.usersLoading=true;S.usersMsg="Loading user accounts…";render();
  await loadManagedUsers();
  if(S.userListModal)render();
 }
@@ -639,7 +641,7 @@ function bizCards(){
   <div class="bn${k.n?"":" zero"}">${k.n}</div><div class="mu">${k.n===1?"trainee":"trainees"}</div>
   <div class="bs mu"><span>${k.ip} in progress</span><span>${k.dn} completed</span></div></div>`}).join("")+'</div>';
 }
-// ---- Hierarchy images (one per business, stored in the bucket)
+// ---- Hierarchy files (one image or PDF per business, stored in the bucket)
 const HYMAX=10*1024*1024;
 const loadHier=()=>fetch("/api/hierarchy-images").then(r=>r.json()).then(d=>{if(d&&!d.error)S.himg=d}).catch(()=>{});
 function hierImages(){
@@ -647,15 +649,18 @@ function hierImages(){
  return L.map(b=>{
   const im=S.himg[b],msg=S.hmsg[b]||"",busy=msg.endsWith("…");
   const url="/api/hierarchy-images/"+encodeURIComponent(b)+"?v="+encodeURIComponent(im?im.at:"");
-  return `<div class="card hyi"><div class="sp"><h2>${esc(b)} hierarchy</h2>${allow("hier")?`<div class="row">${im?`<button type="button" class="sm dgr" data-a="hyremove" data-b="${esc(b)}"${busy?" disabled":""}>Remove</button>`:""}<label class="hy-up${busy?" is-busy":""}">${im?"Replace image":"Upload image"}<input type="file" class="hy-file" data-b="${esc(b)}" accept="image/png,image/jpeg,image/gif,image/webp" hidden${busy?" disabled":""}></label></div>`:""}</div>
-  ${im?`<a href="${url}" target="_blank" rel="noopener"><img class="hy-img" src="${url}" alt="${esc(b)} hierarchy"></a><div class="mu">${esc(im.name)} · ${pdfSize(im.size)} · uploaded ${fmt(im.at)}</div>`:`<div class="mu">No hierarchy image uploaded for ${esc(b)} yet.</div>`}
+  const isPdf=im&&im.type==="application/pdf";
+  const preview=im?(isPdf?`<iframe class="hy-pdf" src="${url}" title="${esc(b)} hierarchy PDF"></iframe><a href="${url}" target="_blank" rel="noopener">Open PDF in a new tab</a>`:`<a href="${url}" target="_blank" rel="noopener"><img class="hy-img" src="${url}" alt="${esc(b)} hierarchy"></a>`):`<div class="mu">No hierarchy file uploaded for ${esc(b)} yet.</div>`;
+  return `<div class="card hyi"><div class="sp"><h2>${esc(b)} hierarchy</h2>${allow("hier")?`<div class="row">${im?`<button type="button" class="sm dgr" data-a="hyremove" data-b="${esc(b)}"${busy?" disabled":""}>Remove</button>`:""}<label class="hy-up${busy?" is-busy":""}">${im?"Replace file":"Upload image/PDF"}<input type="file" class="hy-file" data-b="${esc(b)}" accept="image/png,image/jpeg,image/gif,image/webp,application/pdf" hidden${busy?" disabled":""}></label></div>`:""}</div>
+  ${im?`${preview}<div class="mu">${esc(im.name)} · ${pdfSize(im.size)} · uploaded ${fmt(im.at)}</div>`:preview}
   ${msg?`<div class="mu" role="status" style="margin-top:6px">${esc(msg)}</div>`:""}</div>`}).join("");
 }
 async function hierUpload(inp){
  if(!allow("hier"))return;const b=inp.dataset.b,f=inp.files[0];inp.value="";if(!f)return;
  const setMsg=m=>{S.hmsg[b]=m;if(S.bv==="hierarchy"&&!S.sel)render()};
- if(!/^image\/(png|jpeg|gif|webp)$/.test(f.type))return setMsg("Only PNG, JPG, GIF or WEBP images are allowed.");
- if(f.size>HYMAX)return setMsg("Image must be 10 MB or smaller.");
+ const isImage=/^image\/(png|jpeg|gif|webp)$/.test(f.type),isPdf=f.type==="application/pdf"||f.name.toLowerCase().endsWith(".pdf");
+ if(!isImage&&!isPdf)return setMsg("Only PNG, JPG, GIF, WEBP, or PDF files are allowed.");
+ if(f.size>HYMAX)return setMsg("File must be 10 MB or smaller.");
  setMsg("Uploading…");
  try{
   const fd=new FormData();fd.append("business",b);fd.append("file",f);
@@ -665,7 +670,7 @@ async function hierUpload(inp){
  }catch(err){setMsg(err instanceof Error?err.message:String(err))}
 }
 async function hierRemove(b){
- if(!confirm("Remove the "+b+" hierarchy image?"))return;
+ if(!confirm("Remove the "+b+" hierarchy file?"))return;
  S.hmsg[b]="Removing…";render();
  try{
   const r=await fetch("/api/hierarchy-images/"+encodeURIComponent(b),{method:"DELETE"}),d=await r.json().catch(()=>({}));
@@ -1483,6 +1488,13 @@ document.addEventListener("input",e=>{
   if(field)S.addDraft[field]=e.target.value;
  }
  if(e.target.id==="q"){S.q=e.target.value;const l=document.getElementById("tl");if(l)l.innerHTML=listBody()}
+ if(e.target.id==="managed-users-search"){
+  S.userSearch=e.target.value;
+  const caret=e.target.selectionStart;
+  render();
+  const search=document.getElementById("managed-users-search");
+  if(search){search.focus();if(caret!==null)search.setSelectionRange(caret,caret)}
+ }
 });
 // ---- Map videos modal actions
 function mapRender(){

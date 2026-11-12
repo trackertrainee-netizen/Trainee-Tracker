@@ -93,6 +93,7 @@ button:disabled:hover{border-color:rgba(255,255,255,.3)}
 
 /* ---- Tables */
 .sc{overflow-x:auto;border-radius:0.75rem}
+.managed-user-search{display:block;margin:0.25rem 0 0.75rem}.managed-user-search input{width:100%}
 table{border-collapse:collapse;width:100%;min-width:43.75rem;font-size:0.8125rem}
 th,td{text-align:left;padding:0.6875rem 0.625rem;border-bottom:1px solid var(--bd);vertical-align:top}
 th{color:var(--mu);font-weight:600;font-size:0.6875rem;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--bd2)}
@@ -309,6 +310,7 @@ td button.sm{white-space:nowrap}
 .hy-up{cursor:pointer;padding:0.375rem 0.875rem;border:1px solid var(--bd2);border-radius:6.1875rem;font-size:0.8125rem;font-weight:600;background:var(--card)}
 .hy-up:hover{border-color:var(--gold)}.hy-up.is-busy{opacity:.4;pointer-events:none}
 .hy-img{display:block;max-width:100%;max-height:70vh;margin:0.5rem 0 0.75rem;border-radius:0.75rem;border:1px solid var(--bd)}
+.hy-pdf{display:block;width:100%;height:min(70vh,48rem);margin:0.5rem 0 0.75rem;border:1px solid var(--bd);border-radius:0.75rem;background:var(--card)}
 
 /* ---- Dropdown option colours (hover / selected) */
 option{background:var(--card);color:var(--tx)}
