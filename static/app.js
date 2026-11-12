@@ -102,7 +102,7 @@ function traineeAccountModal(t){
 function videoModal(){
  if(S.user.role==="trainee"&&S.videoStep!=null){
   const step=ST[S.videoStep];
-   return `<div class="trainee-video-screen" id="trainee-video-shell" role="dialog" aria-modal="true" aria-labelledby="video-title"><header class="trainee-video-heading"><h1 id="video-title">${esc(step.n)}</h1><span>Training video · ${esc(MODS[step.m].n)}</span></header><video id="video-player" class="trainee-video-player" aria-labelledby="video-title" playsinline preload="metadata"></video><div id="video-player-status" class="trainee-video-status" role="status" aria-live="polite">Loading video…</div><div class="trainee-video-controls"><button type="button" class="p" data-a="trainee-video-toggle" id="trainee-video-toggle">Play</button><button type="button" data-a="trainee-video-rewind">Rewind 10 seconds</button><button type="button" data-a="trainee-video-return" id="trainee-video-return" hidden>Return to where you first rewound</button></div><section class="trainee-video-finished" id="trainee-video-finished" hidden><b>Video finished</b><div id="video-replay-status" class="trainee-video-status" role="status" aria-live="polite">Saving video completion…</div><button type="button" class="p" data-a="video-replay-request" id="video-replay-request" disabled>Request replay from HR</button><button type="button" data-a="trainee-video-continue">Continue</button></section></div>`;
+   return `<div class="trainee-video-screen" id="trainee-video-shell" role="dialog" aria-modal="true" aria-labelledby="video-title"><header class="trainee-video-heading"><h1 id="video-title">${esc(step.n)}</h1><span>Training video · ${esc(MODS[step.m].n)}</span></header><video id="video-player" class="trainee-video-player" aria-labelledby="video-title" playsinline preload="auto"${S.videoAutoplay?" autoplay":""}></video><div id="video-player-status" class="trainee-video-status" role="status" aria-live="polite">Loading video…</div><div class="trainee-video-controls"><button type="button" class="p" data-a="trainee-video-toggle" id="trainee-video-toggle">Play</button><button type="button" data-a="trainee-video-rewind">Rewind 10 seconds</button><button type="button" data-a="trainee-video-return" id="trainee-video-return" hidden>Return to where you first rewound</button></div><section class="trainee-video-finished" id="trainee-video-finished" hidden><b>Video finished</b><div id="video-replay-status" class="trainee-video-status" role="status" aria-live="polite">Saving video completion…</div><button type="button" class="p" data-a="video-replay-request" id="video-replay-request" disabled>Request replay from HR</button><button type="button" data-a="trainee-video-continue">Continue</button></section></div>`;
  }
  if(S.user.role==="trainee"&&S.replayGateStep!=null){
    const step=ST[S.replayGateStep],request=(S.videoReplayRequests||[]).find(item=>item.step_index===S.replayGateStep);
@@ -177,7 +177,7 @@ const mv=mi=>ST.filter(x=>x.m===mi&&x.t==="VIDEO").reduce((a,x)=>a+x.min,0);
 // ---- State
 const BIZ=BUSINESSES;
 const biz=t=>t.biz||"";
-let S={t:[],sel:null,upload:false,video:false,videoStep:null,replayGateStep:null,replayGateMsg:"",completedVideoSteps:[],videoReplayRequests:[],videoCompletionError:"",videoFinished:false,videoWatchSaved:false,videoReplayRequested:false,videoReturnAt:null,videoLatestTime:0,videoSeekTarget:null,hls:null,view:"overview",bv:"overview",nav:"dashboard",map:false,replayInbox:false,replayInboxData:[],replayInboxMsg:"",settings:false,userManagement:false,userModal:false,userDraft:null,userMsg:"",organization:false,permissions:false,permissionDraft:null,permissionMsg:"",accountModal:false,accountDone:false,accountMsg:"",orgEntity:"business",orgParent:"",orgName:"",orgMsg:"",vmap:{},folders:[],mb:"Magnus",mm:0,mt:null,mf:"",mplay:"",mmsg:"",mfstat:"",himg:{},hmsg:{},user:null,options:{businesses:[],branches:[],departments:[],designations:[]},addBiz:"",addBranch:"",addDept:"",addDesg:"",addmsg:"",loginmsg:""};
+let S={t:[],sel:null,upload:false,video:false,videoStep:null,videoAutoplay:false,replayGateStep:null,replayGateMsg:"",completedVideoSteps:[],videoReplayRequests:[],videoCompletionError:"",videoFinished:false,videoWatchSaved:false,videoReplayRequested:false,videoReturnAt:null,videoLatestTime:0,videoSeekTarget:null,hls:null,view:"overview",bv:"overview",nav:"dashboard",map:false,replayInbox:false,replayInboxData:[],replayInboxMsg:"",settings:false,userManagement:false,userModal:false,userDraft:null,userMsg:"",organization:false,permissions:false,permissionDraft:null,permissionMsg:"",accountModal:false,accountDone:false,accountMsg:"",orgEntity:"business",orgParent:"",orgName:"",orgMsg:"",vmap:{},folders:[],mb:"Magnus",mm:0,mt:null,mf:"",mplay:"",mmsg:"",mfstat:"",himg:{},hmsg:{},user:null,options:{businesses:[],branches:[],departments:[],designations:[]},addBiz:"",addBranch:"",addDept:"",addDesg:"",addmsg:"",loginmsg:""};
 let activeVideoUpload=null;
 // ---- Supabase Auth-backed roles
 const sameName=(a,b)=>String(a||"").trim().toLowerCase()===String(b||"").trim().toLowerCase();
@@ -677,10 +677,11 @@ const nav=`<div class="navbar"><button class="gh" data-a="prev" ${vm<=0?"disable
   const actions=l.st
    ?(allow("work")&&needsPdf(x)?pdfUi(t,l)+(l.pdf?"":`<div class="mu" style="margin-bottom:8px">Upload your presentation (PDF) to enable completion.</div>`):"")+(allow("work")?`<button class="p" data-a="cmp" ${needsPdf(x)&&!l.pdf?"disabled":""}>Mark completed now</button>`:"")
    :allow("work")?'<button class="p" data-a="go">▶ Start task</button>':"";
+   const videoNotice=S.user.role==="trainee"&&x.t==="VIDEO"&&!vfolder(biz(t),l.s)?'<div class="mu" style="margin-top:8px">This video has not been mapped yet. Please contact HR.</div>':"";
   act=`<div class="card cur"><div class="mu">Current · Step ${l.s+1} of ${ST.length} · ${MODS[x.m].n}</div>
  <h2 style="margin-top:4px"><span class="chip">${x.t}</span> ${esc(x.n)}</h2>
  <div class="mu">Duration ${x.d} · Monitored by ${x.by}</div>${S.user.role!=="trainee"&&x.t==="VIDEO"&&vfolder(biz(t),l.s)?`<div style="margin-top:10px"><button type="button" class="sm gh" data-a="watchstep" data-s="${l.s}">▶ Watch this video</button></div>`:""}
- <div style="margin-top:10px">${activity}${actions}</div></div>`;
+  ${videoNotice}<div style="margin-top:10px">${activity}${actions}</div></div>`;
  }
  else if(waiting(t)!=null){const w=waiting(t),y=ST[w],moduleChanged=ST[w-1].m!==y.m;act=`<div class="card cur"><div class="mu">${moduleChanged?MODS[ST[w-1].m].n+" completed":"Previous task completed"}</div><h2 style="margin-top:4px">Next: ${moduleChanged?MODS[y.m].n:esc(y.n)}</h2><div class="mu" style="margin-bottom:10px">${moduleChanged?"First task: ":""}${esc(y.n)} (${y.d}). Start when you’re ready.</div>${allow("work")?`<button class="p" data-a="start">▶ Start ${moduleChanged?mshort(w):"task"}</button>`:""}</div>`}
  else act=`<div class="card cur ok"><b>All ${ST.length} tasks completed 🎉</b></div>`;
@@ -694,7 +695,7 @@ function openTaskVideo(t,stepIndex,autoplay=false){
  const folder=vfolder(biz(t),stepIndex);
  if(!folder||!ST[stepIndex]||ST[stepIndex].t!=="VIDEO")return false;
  S.add=false;S.edit=false;S.modal=null;S.upload=false;S.map=false;S.vpre=folder;S.video=true;
- S.videoStep=S.user.role==="trainee"?stepIndex:null;S.replayGateStep=null;S.replayGateMsg="";
+ S.videoStep=S.user.role==="trainee"?stepIndex:null;S.videoAutoplay=autoplay;S.replayGateStep=null;S.replayGateMsg="";
  if(S.user.role==="trainee"&&(S.videoCompletionError||S.completedVideoSteps.includes(stepIndex))){
   S.videoStep=null;S.replayGateStep=stepIndex;S.replayGateMsg=S.videoCompletionError||"Checking HR approval…";
  }
@@ -755,10 +756,10 @@ document.addEventListener("click",e=>{
  }
  if(a==="video-replay-request")return requestVideoReplay();
  if(a==="replay-approved")return startApprovedReplay(b.dataset.id);
- if(a==="replay-gate-close"){stopVideoPlayer();S.video=false;S.videoStep=null;S.replayGateStep=null;return render()}
+ if(a==="replay-gate-close"){stopVideoPlayer();S.video=false;S.videoStep=null;S.videoAutoplay=false;S.replayGateStep=null;return render()}
  if(a==="trainee-video-continue"){
   if(!S.videoFinished)return;
-  stopVideoPlayer();S.video=false;S.videoStep=null;S.videoFinished=false;render();return;
+  stopVideoPlayer();S.video=false;S.videoStep=null;S.videoAutoplay=false;S.videoFinished=false;render();return;
  }
  if(a==="replay-decision")return reviewVideoReplay(b.dataset.id,b.dataset.status);
  if(a==="replay-inbox-close"){S.replayInbox=false;S.replayInboxMsg="";return render()}
@@ -1092,7 +1093,11 @@ function playVideo(folder,pid="video-player",sid="video-player-status",autoplay=
  const tryAutoplay=()=>{
   if(!autoplay)return;
   const attempt=player.play();
-  if(attempt&&typeof attempt.catch==="function")attempt.catch(()=>{status.textContent="Playback did not start automatically. Press Play to begin."});
+  if(attempt&&typeof attempt.catch==="function")attempt.catch(error=>{
+   status.textContent=error&&error.name==="NotAllowedError"
+    ?"Your browser blocked automatic playback. Press Play to begin."
+    :"The video could not start. Press Play to try again.";
+  });
  };
  status.textContent="Loading playlist…";
  if(player.canPlayType("application/vnd.apple.mpegurl")){
@@ -1111,6 +1116,7 @@ function playVideo(folder,pid="video-player",sid="video-player-status",autoplay=
   status.textContent="Ready to play.";
   if(autoplay&&player.paused)tryAutoplay();
  });
+ hls.on(window.Hls.Events.MEDIA_ATTACHED,()=>{if(autoplay&&player.paused)tryAutoplay()});
  hls.on(window.Hls.Events.ERROR,(_,data)=>{
   if(data.fatal){
    status.textContent="Could not load this video. Check the playlist and storage.";
@@ -1348,7 +1354,8 @@ async function restoreSession(){
   S.user=result.user;
   await loadOptions();
   await load();
-  initView();render();loadMap();loadHier();
+  await loadMap();
+  initView();render();loadHier();
  }catch(error){
   await fetch("/api/logout",{method:"POST"}).catch(()=>{});
   S.user=null;S.t=[];S.loaded=false;
