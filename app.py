@@ -178,7 +178,7 @@ def _require_org_manager():
 
 
 def _require_user_manager():
-    if g.profile["role"] not in ("developer", "business", "business_view"):
+    if g.profile["role"] not in ("developer", "business", "business_hr", "business_view"):
         return jsonify(error="Your account cannot manage users."), 403
     return None
 
@@ -194,6 +194,8 @@ def _can_manage_staff_profile(profile):
     manager = g.profile
     if manager["role"] == "developer":
         return True
+    if manager["role"] == "business_hr" and not manager.get("business_id"):
+        return True
     if profile.get("business_id") != manager.get("business_id"):
         return False
     if manager.get("branch_id") and profile.get("branch_id") != manager["branch_id"]:
@@ -201,7 +203,9 @@ def _can_manage_staff_profile(profile):
     if manager.get("department_id") and profile.get("department_id") != manager["department_id"]:
         return False
     if manager["role"] == "business":
-        return profile.get("role") in ("business", "business_view")
+        return profile.get("role") in ("business", "business_hr", "business_view")
+    if manager["role"] == "business_hr":
+        return profile.get("role") in ("business_hr", "business_view")
     return profile.get("role") == "business_view"
 
 
@@ -504,7 +508,7 @@ def get_user_accounts():
     denied = _require_user_manager()
     if denied:
         return denied
-    if not _is_developer() and not g.profile.get("business_id"):
+    if g.profile["role"] in ("business", "business_view") and not g.profile.get("business_id"):
         return jsonify(error="Your account has no business scope."), 403
     try:
         admin = _service_admin_client()
@@ -583,11 +587,21 @@ def create_user_account():
         if role == "developer" or all_businesses:
             business_id = None
     else:
-        # Business accounts can only add Business / Business viewer users in their own business.
-        if role == "developer":
-            return jsonify(error="Only a developer can create developer accounts."), 403
-        business_id = g.profile.get("business_id")
-        if not business_id:
+        manager_role = g.profile["role"]
+        allowed_roles = {
+            "business": ("business", "business_hr", "business_view"),
+            "business_hr": ("business_hr", "business_view"),
+            "business_view": ("business_view",),
+        }.get(manager_role, ())
+        if role not in allowed_roles:
+            return jsonify(error="Your account cannot create that role."), 403
+        profile_business_id = g.profile.get("business_id")
+        if profile_business_id:
+            business_id = profile_business_id
+        elif manager_role == "business_hr":
+            if not business_id or business_id == "all":
+                return jsonify(error="Choose one business for this user."), 400
+        else:
             return jsonify(error="Your account has no business scope."), 403
 
     try:
@@ -689,14 +703,16 @@ def update_user_account(user_id):
         if user_id == str(g.profile.get("id")) and role != profile["role"]:
             return jsonify(error="You cannot change your own role."), 400
         if not _is_developer():
-            allowed_roles = (
-                ("business", "business_view")
-                if g.profile["role"] == "business"
-                else ("business_view",)
-            )
+            allowed_roles = {
+                "business": ("business", "business_hr", "business_view"),
+                "business_hr": ("business_hr", "business_view"),
+                "business_view": ("business_view",),
+            }.get(g.profile["role"], ())
             if role not in allowed_roles:
                 return jsonify(error="Your account cannot assign that role."), 403
             business_id = g.profile.get("business_id")
+            if g.profile["role"] == "business_hr" and not business_id:
+                business_id = body.get("business_id", profile.get("business_id"))
         else:
             business_id = body.get("business_id", profile.get("business_id"))
             if role == "developer":

@@ -192,8 +192,8 @@ const mv=mi=>ST.filter(x=>x.m===mi&&x.t==="VIDEO").reduce((a,x)=>a+x.min,0);
 // ---- State
 const BIZ=BUSINESSES;
 const biz=t=>t.biz||"";
-let S={t:[],sel:null,upload:false,video:false,videoStep:null,videoAutoplay:false,replayGateStep:null,replayGateMsg:"",completedVideoSteps:[],videoReplayRequests:[],videoCompletionError:"",videoFinished:false,videoWatchSaved:false,videoReplayRequested:false,videoReturnAt:null,videoLatestTime:0,videoSeekTarget:null,hls:null,view:"overview",bv:"overview",nav:"dashboard",map:false,replayInbox:false,replayInboxData:[],replayInboxMsg:"",settings:false,userManagement:false,userModal:false,userDraft:null,userMsg:"",organization:false,permissions:false,permissionDraft:null,permissionMsg:"",accountModal:false,accountDone:false,accountMsg:"",orgEntity:"business",orgParent:"",orgName:"",orgMsg:"",vmap:{},folders:[],mb:"Magnus",mm:0,mt:null,mf:"",mplay:"",mmsg:"",mfstat:"",himg:{},hmsg:{},user:null,options:{businesses:[],branches:[],departments:[],designations:[]},addBiz:"",addBranch:"",addDept:"",addDesg:"",addmsg:"",loginmsg:""};
-let activeVideoUpload=null;
+let S={t:[],sel:null,upload:false,video:false,videoStep:null,videoAutoplay:false,replayGateStep:null,replayGateMsg:"",replayRequestConfirmStep:null,completedVideoSteps:[],videoReplayRequests:[],videoCompletionError:"",videoFinished:false,videoWatchSaved:false,videoReplayRequested:false,videoReturnAt:null,videoLatestTime:0,videoSeekTarget:null,hls:null,view:"overview",bv:"overview",nav:"dashboard",map:false,replayInbox:false,replayInboxData:[],replayInboxMsg:"",pendingReplayCount:0,userListModal:false,managedUsers:[],usersLoading:false,usersMsg:"",userReturnToList:false,settings:false,userManagement:false,userModal:false,userDraft:null,userMsg:"",organization:false,permissions:false,permissionDraft:null,permissionMsg:"",accountModal:false,accountDone:false,accountMsg:"",orgEntity:"business",orgParent:"",orgName:"",orgMsg:"",vmap:{},folders:[],mb:"Magnus",mm:0,mt:null,mf:"",mplay:"",mmsg:"",mfstat:"",himg:{},hmsg:{},user:null,options:{businesses:[],branches:[],departments:[],designations:[]},addBiz:"",addBranch:"",addDept:"",addDesg:"",addmsg:"",loginmsg:""};
+let activeVideoUpload=null,replayNotificationTimer=null;
 // ---- Supabase Auth-backed roles
 const sameName=(a,b)=>String(a||"").trim().toLowerCase()===String(b||"").trim().toLowerCase();
 const PERMISSION_STORAGE_KEY="mt_permissions";
@@ -233,7 +233,7 @@ const roleLabel=()=>S.user?(ROLE_LABELS[S.user.role]||S.user.role):"";
 const scopeLabel=()=>{const u=S.user;if(!u)return"";if(ALLBIZ(u))return"All businesses";
  if(u.business&&u.business.name)return [u.business.name,u.branch&&u.branch.name,u.department&&u.department.name].filter(Boolean).join(" · ");
  return""};
-const initView=()=>{S.sel=null;S.vm=null;S.q="";S.bv="overview";S.nav="dashboard";S.modal=null;S.edit=false;S.add=false;S.accountModal=false;S.accountDone=false;S.accountMsg="";S.upload=false;S.video=false;S.videoStep=null;S.replayGateStep=null;S.replayGateMsg="";S.completedVideoSteps=[];S.videoReplayRequests=[];S.videoCompletionError="";S.videoFinished=false;S.videoWatchSaved=false;S.videoReplayRequested=false;S.videoReturnAt=null;S.videoLatestTime=0;S.videoSeekTarget=null;S.map=false;S.replayInbox=false;S.settings=false;S.userManagement=false;S.userModal=false;S.userDraft=null;S.userMsg="";S.organization=false;S.permissions=false;S.permissionDraft=null;S.view=oneBiz()?vbiz()[0]:"overview"};
+const initView=()=>{S.sel=null;S.vm=null;S.q="";S.bv="overview";S.nav="dashboard";S.modal=null;S.edit=false;S.add=false;S.accountModal=false;S.accountDone=false;S.accountMsg="";S.upload=false;S.video=false;S.videoStep=null;S.replayGateStep=null;S.replayGateMsg="";S.replayRequestConfirmStep=null;S.completedVideoSteps=[];S.videoReplayRequests=[];S.videoCompletionError="";S.videoFinished=false;S.videoWatchSaved=false;S.videoReplayRequested=false;S.videoReturnAt=null;S.videoLatestTime=0;S.videoSeekTarget=null;S.map=false;S.replayInbox=false;S.replayInboxData=[];S.replayInboxMsg="";S.pendingReplayCount=0;S.settings=false;S.userManagement=false;S.userModal=false;S.userListModal=false;S.userDraft=null;S.userMsg="";S.managedUsers=[];S.usersLoading=false;S.usersMsg="";S.userReturnToList=false;S.organization=false;S.permissions=false;S.permissionDraft=null;S.view=oneBiz()?vbiz()[0]:"overview"};
 async function login(username,password){
  const response=await fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username,password})});
  const result=await response.json().catch(()=>({}));
@@ -459,7 +459,7 @@ function permissionsModal(){
  const rows=Object.entries(PERM_LABELS).map(([permission,label])=>`<tr><td>${esc(label)}</td>${roles.map(role=>`<td style="text-align:center"><input type="checkbox" class="permission-toggle" data-role="${esc(role)}" data-permission="${esc(permission)}"${draft[role]&&draft[role][permission]?" checked":""}${role==="developer"?" disabled":""} aria-label="${esc(label+" — "+(ROLE_LABELS[role]||role))}"></td>`).join("")}</tr>`).join("");
  return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="permissions-title"><div class="bd" data-a="permissions-close"></div><div class="mb wide acc"><h2 id="permissions-title">Role permissions</h2><div class="mu">Choose which actions are shown for each existing role. Developer permissions stay enabled.</div><div class="sc"><table><tr><th>Permission</th>${header}</tr>${rows}</table></div><div class="mu" role="status">${esc(S.permissionMsg||"")}</div><div class="mu" style="margin-top:8px">These switches control the app interface only; Supabase and API policies still enforce server-side access. Save applies on this browser. Download config.js and deploy it to share the settings with everyone.</div><div class="row" style="margin-top:14px;justify-content:flex-end"><button type="button" data-a="permissions-close">Close</button><button type="button" data-a="permissions-download">Download config.js</button><button type="button" class="p" data-a="permissions-save">Save permissions</button></div></div></div>`;
 }
-const canManageUsers=()=>!!(S.user&&["developer","business"].includes(S.user.role));
+const canManageUsers=()=>!!(S.user&&["developer","business","business_hr","business_view"].includes(S.user.role));
 function settingsModal(){
  const organization=canManageOrganization()?'<button type="button" class="settings-action" data-a="orgopen"><span>Manage organization</span><small>Businesses, branches, departments and designations</small></button>':"";
  const userManagementDescription=S.user.role==="developer"?"Add and manage users, trainees, roles, and permissions":"Add and manage user accounts";
@@ -476,20 +476,70 @@ function userManagementModal(){
 }
 function openUserModal(){
  if(!canManageUsers())return;
- const own=S.user.role==="business"?((S.user.business||{}).id||""):((S.options.businesses[0]||{}).id||"");
+ const scopedBusiness=S.user.role==="business"||((S.user.role==="business_hr"||S.user.role==="business_view")&&S.user.business_id);
+ const own=scopedBusiness?((S.user.business||{}).id||S.user.business_id||""):((S.options.businesses[0]||{}).id||"");
  S.settings=false;S.userManagement=false;S.userModal=true;S.userMsg="";
  S.userDraft={username:"",password:"",role:"business_view",business_id:own};
 }
 function userModal(){
- const d=S.userDraft||{},dev=S.user.role==="developer";
- const roles=(dev?["developer","business","business_view"]:["business","business_view"]);
+ const d=S.userDraft||{},dev=S.user.role==="developer",businessView=S.user.role==="business_view";
+ const chooseBusiness=dev||(S.user.role==="business_hr"&&!S.user.business_id);
+ const roles=dev?["developer","business","business_hr","business_view"]:businessView?["business_view"]:["business","business_hr","business_view"];
  const needsBiz=d.role!=="developer";
- const bizField=!needsBiz?"":dev?`<label>Business<select id="u-biz">${S.options.businesses.map(x=>`<option value="${esc(x.id)}"${x.id===d.business_id?" selected":""}>${esc(x.name)}</option>`).join("")}</select></label>`:`<div class="mu">New users are added to ${esc((S.user.business||{}).name||"your business")}.</div>`;
- return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="user-title"><div class="bd" data-a="userclose"></div><div class="mb"><h2 id="user-title">Add users</h2><div class="mu">Create a sign-in account. They log in with this username and password.</div><label class="fl">Username<input id="u-name" maxlength="120" autocomplete="off" value="${esc(d.username||"")}"></label><label class="fl">Password<div class="pw-wrap"><input id="u-pass" type="password" minlength="6" autocomplete="new-password" value="${esc(d.password||"")}">${passwordToggle("u-pass")}</div></label><label class="fl">Role<select id="u-role">${roles.map(r=>`<option value="${esc(r)}"${r===d.role?" selected":""}>${esc(ROLE_LABELS[r]||r)}</option>`).join("")}</select></label>${bizField}<div class="lg-err" role="status">${esc(S.userMsg)}</div><div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="userclose">Close</button><button type="button" class="p" data-a="usercreate">Create user</button></div></div></div>`;
+ const editing=!!d.id,self=editing&&d.id===S.user.id;
+ const bizOptions=dev&&!editing&&d.role==="business_hr"?`<option value="all"${d.business_id==="all"?" selected":""}>All businesses</option>`:"";
+ const bizField=!needsBiz?"":chooseBusiness?`<label class="fl">Business<select id="u-biz">${bizOptions}${S.options.businesses.map(x=>`<option value="${esc(x.id)}"${x.id===d.business_id?" selected":""}>${esc(x.name)}</option>`).join("")}</select></label>`:`<div class="mu">New users are added to ${esc((S.user.business||{}).name||"your business")}.</div>`;
+ const roleOptions=roles.map(r=>`<option value="${esc(r)}"${r===d.role?" selected":""}>${esc(ROLE_LABELS[r]||r)}</option>`).join("");
+ const roleField=`<label class="fl">Role<select id="u-role"${self?" disabled":""}>${roleOptions}</select></label>`;
+ return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="user-title"><div class="bd" data-a="userclose"></div><div class="mb"><h2 id="user-title">${editing?"Edit user":"Add users"}</h2><div class="mu">${editing?"Update the account details.":"Create a sign-in account. They log in with this username and password."}</div><label class="fl">Username<input id="u-name" maxlength="120" autocomplete="off" value="${esc(d.username||"")}"></label><label class="fl">Password<div class="pw-wrap"><input id="u-pass" type="password" minlength="6" autocomplete="new-password" value="${esc(d.password||"")}">${passwordToggle("u-pass")}</div>${editing?'<div class="mu">Leave blank to keep the current password.</div>':""}</label>${roleField}${bizField}<div class="lg-err" role="status">${esc(S.userMsg)}</div><div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="userclose">Close</button><button type="button" class="p" data-a="usercreate">${editing?"Save changes":"Create user"}</button></div></div></div>`;
+}
+function managedUsersModal(){
+ if(!canManageUsers())return "";
+ const rows=S.managedUsers.map(user=>`<tr><td>${esc(user.username)}</td><td>${esc(ROLE_LABELS[user.role]||user.role)}</td><td>${esc(user.business||"—")}</td><td><div class="map-act"><button type="button" class="sm" data-a="user-edit" data-id="${esc(user.id)}">Edit</button><button type="button" class="sm dgr" data-a="user-delete" data-id="${esc(user.id)}"${user.id===S.user.id?" disabled":""}>Remove</button></div></td></tr>`).join("");
+ const content=S.usersLoading?'<div class="mu">Loading users…</div>':S.usersMsg&&!S.managedUsers.length?`<div class="lg-err" role="status">${esc(S.usersMsg)}</div>`:rows?`<div class="sc"><table><tr><th>Username</th><th>Role</th><th>Business</th><th></th></tr>${rows}</table></div>`:'<div class="mu">No user accounts found.</div>';
+ return `<div class="ov" role="dialog" aria-modal="true" aria-labelledby="managed-users-title"><div class="bd" data-a="managed-users-close"></div><div class="mb wide"><h2 id="managed-users-title">Manage users</h2><div class="mu" role="status">${S.usersMsg&&!S.usersLoading&&S.managedUsers.length?esc(S.usersMsg):""}</div>${content}<div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="managed-users-close">Back</button><button type="button" class="p" data-a="user-add-from-list">Add user</button></div></div></div>`;
+}
+async function loadManagedUsers(){
+ S.usersLoading=true;S.usersMsg="Loading user accounts…";
+ try{
+  const response=await fetch("/api/users");
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(result.error||`Could not load user accounts (HTTP ${response.status}).`);
+  if(!Array.isArray(result))throw new Error("The server returned invalid user data.");
+  S.managedUsers=result;S.usersMsg="";
+ }catch(error){
+  S.usersMsg=error instanceof Error?error.message:String(error);
+ }finally{
+  S.usersLoading=false;
+ }
+}
+async function openManagedUsers(){
+ if(!canManageUsers())return;
+ S.userManagement=false;S.userListModal=true;S.managedUsers=[];S.usersLoading=true;S.usersMsg="Loading user accounts…";render();
+ await loadManagedUsers();
+ if(S.userListModal)render();
+}
+async function deleteManagedUser(id){
+ if(!canManageUsers())return;
+ const user=S.managedUsers.find(item=>item.id===id);
+ if(!user||user.id===S.user.id||!confirm(`Remove ${user.username}'s user account?`))return;
+ S.usersMsg=`Removing ${user.username}…`;render();
+ try{
+  const response=await fetch(`/api/users/${encodeURIComponent(id)}`,{method:"DELETE"});
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(result.error||"Could not remove the user account.");
+  await loadManagedUsers();
+  if(!S.usersMsg)S.usersMsg=`Removed ${user.username}.`;
+ }catch(error){S.usersMsg=error instanceof Error?error.message:String(error)}
+ if(S.userListModal)render();
 }
 async function createUser(){
  const d=S.userDraft;if(!d)return;
- const body={username:(d.username||"").trim(),password:d.password||"",role:d.role,business_id:d.role==="developer"?null:d.business_id||null};
+ const allowedRoles=S.user.role==="developer"?["developer","business","business_hr","business_view"]:S.user.role==="business"?["business","business_hr","business_view"]:S.user.role==="business_hr"?["business_hr","business_view"]:S.user.role==="business_view"?["business_view"]:[];
+ if(!allowedRoles.includes(d.role)){S.userMsg="Your account cannot create that role.";render();return}
+ const editing=!!d.id,businessSelect=document.getElementById("u-biz"),businessId=businessSelect?businessSelect.value:d.business_id||"";
+ const allBusinesses=d.role==="business_hr"&&businessId==="all";
+ const body={username:(d.username||"").trim(),password:d.password||"",role:d.role,business_id:d.role==="developer"?null:allBusinesses?"all":businessId||null};
  if(!body.username){S.userMsg="Enter a username.";render();return}
  if((!editing||body.password)&&body.password.length<6){S.userMsg="Password must be at least 6 characters.";render();return}
  if(body.role!=="developer"&&!body.business_id){S.userMsg="Choose a business.";render();return}
@@ -519,7 +569,12 @@ document.addEventListener("input",e=>{
 });
 document.addEventListener("change",e=>{
  if(!S.userDraft)return;
- if(e.target.id==="u-role"){S.userDraft.role=e.target.value;render()}
+ if(e.target.id==="u-role"){
+  S.userDraft.role=e.target.value;
+  if(e.target.value!=="business_hr"&&S.userDraft.business_id==="all")S.userDraft.business_id=(S.options.businesses[0]||{}).id||"";
+  if(e.target.value!=="developer"&&!S.userDraft.business_id)S.userDraft.business_id=(S.options.businesses[0]||{}).id||"";
+  render();
+ }
  else if(e.target.id==="u-biz")S.userDraft.business_id=e.target.value;
 });
 function savePermissions(){

@@ -13,14 +13,28 @@ BUSINESS_ID = "44444444-4444-4444-8444-444444444444"
 
 
 class AdminProfileQuery:
-    def __init__(self, client):
+    def __init__(self, client, table):
         self.client = client
+        self.table_name = table
+        self.filters = {}
+
+    def select(self, _columns):
+        return self
+
+    def eq(self, column, value):
+        self.filters[column] = value
+        return self
+
+    def maybe_single(self):
+        return self
 
     def upsert(self, profile):
         self.client.profile = profile
         return self
 
     def execute(self):
+        if self.table_name == "businesses":
+            return SimpleNamespace(data={"id": BUSINESS_ID, "name": "Example"})
         if self.client.profile_error:
             raise self.client.profile_error
         return SimpleNamespace(data=[self.client.profile])
@@ -39,30 +53,14 @@ class AdminClient:
             )
         )
 
-    def table(self, _table):
-        return AdminProfileQuery(self)
-
-
-class BusinessQuery:
-    def select(self, _columns):
-        return self
-
-    def eq(self, _column, _value):
-        return self
-
-    def maybe_single(self):
-        return self
-
-    def execute(self):
-        return SimpleNamespace(data={"id": BUSINESS_ID, "name": "Example"})
+    def table(self, table):
+        return AdminProfileQuery(self, table)
 
 
 class UserRoleTests(unittest.TestCase):
     def create_user(self, profile, business_id, profile_error=None):
         admin = AdminClient(profile_error)
-        database = SimpleNamespace(
-            client=SimpleNamespace(table=lambda _table: BusinessQuery())
-        )
+        database = SimpleNamespace(url="https://example.supabase.co")
         body = {
             "username": "hr-user",
             "password": "valid-password",
