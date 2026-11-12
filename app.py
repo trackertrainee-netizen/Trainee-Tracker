@@ -240,6 +240,10 @@ def _image_type(data):
     return None
 
 
+def _hierarchy_file_type(data):
+    return _image_type(data) or ("application/pdf" if data.startswith(b"%PDF-") else None)
+
+
 def _presentation_key(trainee_name, trainee_id, step):
     return f"{presentation_prefix(trainee_name, trainee_id)}/{step}.pdf"
 
@@ -997,31 +1001,31 @@ def list_hierarchy_images():
 
 @app.post("/api/hierarchy-images")
 def upload_hierarchy():
-    """Upload (or replace) the hierarchy image of one business. Images only."""
+    """Upload (or replace) a business hierarchy image or PDF."""
     business = request.form.get("business", "")
     upload = request.files.get("file")
     if g.profile["role"] not in ("developer", "business", "business_hr"):
-        return jsonify(error="Your account cannot upload hierarchy images."), 403
+        return jsonify(error="Your account cannot upload hierarchy files."), 403
     if not _can_access_business(business):
         return jsonify(error="That business is outside your account scope."), 403
     if upload is None or not upload.filename:
-        return jsonify(error="Select an image to upload."), 400
+        return jsonify(error="Select a file to upload."), 400
     if request.content_length and request.content_length > MAX_HIERARCHY_BYTES + 1024 * 1024:
-        return jsonify(error="Image must be 10 MB or smaller."), 413
+        return jsonify(error="File must be 10 MB or smaller."), 413
     data = upload.read(MAX_HIERARCHY_BYTES + 1)
     if len(data) > MAX_HIERARCHY_BYTES:
-        return jsonify(error="Image must be 10 MB or smaller."), 413
-    content_type = _image_type(data)
+        return jsonify(error="File must be 10 MB or smaller."), 413
+    content_type = _hierarchy_file_type(data)
     if not content_type:
-        return jsonify(error="Only PNG, JPG, GIF or WEBP images are allowed."), 400
+        return jsonify(error="Only PNG, JPG, GIF, WEBP, or PDF files are allowed."), 400
     try:
         upload_hierarchy_image(_business_slug(business), data, content_type)
     except RuntimeError as exc:
         app.logger.error("Hierarchy storage configuration error: %s", exc)
         return jsonify(error=str(exc)), 503
     except (BotoCoreError, ClientError):
-        app.logger.exception("Could not store hierarchy image")
-        return jsonify(error="Could not save the image to storage."), 502
+        app.logger.exception("Could not store hierarchy file")
+        return jsonify(error="Could not save the file to storage."), 502
     entry = {
         "name": os.path.basename(upload.filename)[:120],
         "size": len(data),
@@ -1043,12 +1047,12 @@ def view_hierarchy_image(business):
         obj = get_hierarchy_object(_business_slug(business))
     except ClientError as exc:
         if exc.response.get("Error", {}).get("Code") in ("NoSuchKey", "404", "NotFound"):
-            return jsonify(error="Image not found."), 404
-        app.logger.exception("Could not read hierarchy image")
-        return jsonify(error="Could not load the image from storage."), 502
+            return jsonify(error="Hierarchy file not found."), 404
+        app.logger.exception("Could not read hierarchy file")
+        return jsonify(error="Could not load the file from storage."), 502
     except (BotoCoreError, RuntimeError):
-        app.logger.exception("Could not read hierarchy image")
-        return jsonify(error="Could not load the image from storage."), 502
+        app.logger.exception("Could not read hierarchy file")
+        return jsonify(error="Could not load the file from storage."), 502
     body = obj["Body"]
 
     def stream():
@@ -1064,13 +1068,16 @@ def view_hierarchy_image(business):
     headers = {"Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff"}
     if "ContentLength" in obj:
         headers["Content-Length"] = str(obj["ContentLength"])
-    return Response(stream(), mimetype=obj.get("ContentType") or "application/octet-stream", headers=headers)
+    content_type = obj.get("ContentType") or "application/octet-stream"
+    if content_type == "application/pdf":
+        headers["Content-Disposition"] = 'inline; filename="hierarchy.pdf"'
+    return Response(stream(), mimetype=content_type, headers=headers)
 
 
 @app.delete("/api/hierarchy-images/<business>")
 def delete_hierarchy_image(business):
     if g.profile["role"] not in ("developer", "business", "business_hr"):
-        return jsonify(error="Your account cannot remove hierarchy images."), 403
+        return jsonify(error="Your account cannot remove hierarchy files."), 403
     if not _can_access_business(business):
         return jsonify(error="Unknown business."), 404
     try:
@@ -1078,8 +1085,8 @@ def delete_hierarchy_image(business):
     except RuntimeError as exc:
         return jsonify(error=str(exc)), 503
     except (BotoCoreError, ClientError):
-        app.logger.exception("Could not delete hierarchy image")
-        return jsonify(error="Could not remove the image from storage."), 502
+        app.logger.exception("Could not delete hierarchy file")
+        return jsonify(error="Could not remove the file from storage."), 502
     with lock:
         meta = read_hierarchy()
         meta.pop(business, None)

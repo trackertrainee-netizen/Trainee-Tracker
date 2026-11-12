@@ -127,7 +127,7 @@ def create_parent_folder(folder_name):
 
 
 def upload_hierarchy_image(slug, data, content_type):
-    """Store a business hierarchy image in the R2 bucket (replaces any earlier one)."""
+    """Store a business hierarchy image or PDF in the R2 bucket."""
     _get_s3_client().put_object(
         Bucket=BUCKET_NAME,
         Key=f"{HIERARCHY_PREFIX}/{slug}",
