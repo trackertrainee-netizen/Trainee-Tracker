@@ -172,8 +172,8 @@ def _require_developer():
 
 
 def _require_org_manager():
-    if g.profile["role"] not in ("developer", "business"):
-        return jsonify(error="Only a developer or business account can perform this action."), 403
+    if g.profile["role"] not in ("developer", "business", "business_hr"):
+        return jsonify(error="Only a developer, business, or HR account can perform this action."), 403
     return None
 
 
@@ -468,7 +468,7 @@ def create_organization_record():
     return jsonify(record=records[0]), 201
 
 
-USER_ROLES = ("developer", "business", "business_view")
+USER_ROLES = ("developer", "business", "business_hr", "business_view")
 
 
 @app.post("/api/users")
@@ -493,16 +493,22 @@ def create_user_account():
         return jsonify(error="Choose a valid role."), 400
 
     if _is_developer():
-        if role != "developer" and not business_id:
+        all_businesses = role == "business_hr" and business_id == "all"
+        if role != "developer" and not business_id and not all_businesses:
             return jsonify(error="Choose a business for this user."), 400
-        if role == "developer":
+        if role == "developer" or all_businesses:
             business_id = None
     else:
-        # Business accounts can only add Business / Business viewer users in their own business.
+        # Business and scoped HR accounts can only add users within their business.
         if role == "developer":
             return jsonify(error="Only a developer can create developer accounts."), 403
-        business_id = g.profile.get("business_id")
-        if not business_id:
+        profile_business_id = g.profile.get("business_id")
+        if profile_business_id:
+            business_id = profile_business_id
+        elif g.profile["role"] == "business_hr":
+            if not business_id or business_id == "all":
+                return jsonify(error="Choose one business for this user."), 400
+        else:
             return jsonify(error="Your account has no business scope."), 403
 
     service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
@@ -544,7 +550,15 @@ def create_user_account():
         if "already" in message or "registered" in message or "exists" in message:
             return jsonify(error="That username is already taken."), 409
         return jsonify(error="Could not create the user account."), 502
-    except APIError:
+    except APIError as exc:
+        if (
+            getattr(exc, "code", None) == "23514"
+            and "profiles_role_check" in str(exc)
+        ):
+            app.logger.warning("Business HR role is missing from profiles_role_check.")
+            return jsonify(
+                error="Apply the updated DATA_BASE/workflow.sql before creating HR users."
+            ), 503
         app.logger.exception("Could not create the user profile")
         return jsonify(error="Could not create the user profile."), 502
     return jsonify(ok=True, username=username, role=role), 201
@@ -554,7 +568,7 @@ def create_user_account():
 def get_trainees():
     try:
         trainees = g.database.list_trainees()
-        if g.profile["role"] not in ("developer", "business"):
+        if g.profile["role"] not in ("developer", "business", "business_hr"):
             for trainee in trainees:
                 trainee.pop("sal", None)
                 trainee.pop("wage", None)
@@ -566,8 +580,8 @@ def get_trainees():
 
 @app.post("/api/trainees/<trainee_id>/account")
 def set_trainee_login(trainee_id):
-    if g.profile["role"] not in ("developer", "business"):
-        return jsonify(error="Only a developer or business account can set trainee login passwords."), 403
+    if g.profile["role"] not in ("developer", "business", "business_hr"):
+        return jsonify(error="Only a developer, business, or HR account can set trainee login passwords."), 403
 
     body = request.get_json(silent=True)
     password = body.get("password") if isinstance(body, dict) else None
@@ -585,7 +599,9 @@ def set_trainee_login(trainee_id):
         )
         if not trainee:
             return jsonify(error="Trainee not found or not in your scope."), 404
-        if g.profile["role"] == "business":
+        if g.profile["role"] == "business" or (
+            g.profile["role"] == "business_hr" and g.profile.get("business_id")
+        ):
             scope = _profile_payload(g.database, g.profile)
             for field in ("business", "branch", "department"):
                 allowed = scope.get(field)
@@ -738,7 +754,7 @@ def upload_hierarchy():
     """Upload (or replace) the hierarchy image of one business. Images only."""
     business = request.form.get("business", "")
     upload = request.files.get("file")
-    if g.profile["role"] not in ("developer", "business"):
+    if g.profile["role"] not in ("developer", "business", "business_hr"):
         return jsonify(error="Your account cannot upload hierarchy images."), 403
     if not _can_access_business(business):
         return jsonify(error="That business is outside your account scope."), 403
@@ -807,7 +823,7 @@ def view_hierarchy_image(business):
 
 @app.delete("/api/hierarchy-images/<business>")
 def delete_hierarchy_image(business):
-    if g.profile["role"] not in ("developer", "business"):
+    if g.profile["role"] not in ("developer", "business", "business_hr"):
         return jsonify(error="Your account cannot remove hierarchy images."), 403
     if not _can_access_business(business):
         return jsonify(error="Unknown business."), 404
@@ -1035,7 +1051,7 @@ def list_video_watch_completions():
 
 @app.get("/api/video-replay-requests")
 def list_video_replay_requests():
-    if g.profile["role"] not in ("trainee", "business", "developer"):
+    if g.profile["role"] not in ("trainee", "business_hr", "developer"):
         return jsonify(error="Your account cannot view video replay requests."), 403
     try:
         query = (
@@ -1125,7 +1141,7 @@ def review_video_replay_request(request_id):
     if role == "trainee":
         if decision != "used" or not g.profile.get("trainee_id"):
             return jsonify(error="Invalid replay authorization."), 403
-    elif role not in ("business", "developer"):
+    elif role not in ("business_hr", "developer"):
         return jsonify(error="Only business HR can review video replay requests."), 403
     elif decision not in ("approved", "declined"):
         return jsonify(error="Choose approve or decline."), 400

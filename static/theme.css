@@ -41,9 +41,10 @@ h1,h2{font-weight:600}
 .top-search:focus-within{border-color:var(--gold);box-shadow:0 0 0 3px rgba(20,81,63,.15)}
 .top-search>span{color:#6b7886}
 .top-actions{gap:.875rem}
-.bell{width:2.25rem;height:2.25rem;padding:0;border:0;background:transparent;color:#2a3744;display:grid;place-items:center;border-radius:50%}
+.bell{position:relative;width:2.25rem;height:2.25rem;padding:0;border:0;background:transparent;color:#2a3744;display:grid;place-items:center;border-radius:50%}
 .bell:hover{background:var(--hi)}
 .bell svg{width:1.2rem;height:1.2rem;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.bell-count{position:absolute;top:-.2rem;right:-.25rem;min-width:1.05rem;height:1.05rem;padding:0 .2rem;display:grid;place-items:center;border:2px solid var(--card);border-radius:1rem;background:#c63535;color:#fff;font-size:.62rem;font-weight:700;line-height:1}
 .avatar{background:linear-gradient(145deg,#1d6a54,#0f3a2e);color:#fff;border:2px solid #fff;box-shadow:0 2px 6px rgba(22,40,58,.2)}
 .profile-dropdown{border-radius:.875rem;box-shadow:0 18px 40px -16px rgba(22,40,58,.4)}
 
@@ -385,6 +386,8 @@ select option{background:#fff}
 .trainee-video-finished .trainee-video-status{flex-basis:100%;text-align:center}
 .replay-request{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:1rem 0;border-bottom:1px solid var(--bd)}
 .replay-request:last-of-type{border-bottom:0}
+.replay-confirm{display:flex;align-items:center;justify-content:center;gap:.65rem;flex-wrap:wrap}
+.replay-confirm span{flex-basis:100%;text-align:center;color:#d8e1e7}
 @media(max-width:600px){.trainee-video-screen{gap:.4rem;padding:.75rem}.trainee-video-heading{align-items:flex-start;flex-direction:column;gap:.2rem}.trainee-video-heading h1{font-size:1.2rem}.trainee-video-player{width:min(100%,100rem,calc((100dvh - 12rem)*16/9));max-height:calc(100dvh - 12rem)}.replay-request{align-items:flex-start;flex-direction:column}}
 .card.cur{background:linear-gradient(155deg,var(--ink),var(--navy));color:#fff;border-color:rgba(255,255,255,.08);box-shadow:inset .25rem 0 0 var(--pn),var(--sh)}
 .cur .pdf-box{background:rgba(255,255,255,.08);color:#fff}
