@@ -40,7 +40,7 @@ class DataBase:
         service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
         if not service_key:
             raise RuntimeError(
-                "Set SUPABASE_SERVICE_ROLE_KEY in the server .env file to create trainee login accounts."
+                "Set SUPABASE_SERVICE_ROLE_KEY in the server environment for privileged Supabase operations."
             )
         return create_client(self.url, service_key)
 
@@ -195,6 +195,31 @@ class DataBase:
                 "id,department_id,title"
             ).execute().data,
         }
+
+    def list_video_task_mappings(self):
+        return (
+            self._auth_admin_client()
+            .table("video_task_mappings")
+            .select("business_id,task_key,video_folder")
+            .execute()
+            .data
+        )
+
+    def save_video_task_mapping(self, business_id, task_key, folder):
+        query = self._auth_admin_client().table("video_task_mappings")
+        if folder:
+            query.upsert(
+                {
+                    "business_id": business_id,
+                    "task_key": task_key,
+                    "video_folder": folder,
+                },
+                on_conflict="business_id,task_key",
+            ).execute()
+        else:
+            query.delete().eq("business_id", business_id).eq(
+                "task_key", task_key
+            ).execute()
 
     def create_organization_record(self, entity, name, parent_id=None):
         definitions = {

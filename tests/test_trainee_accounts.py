@@ -318,6 +318,38 @@ class TraineeAccountTests(unittest.TestCase):
             any(operation[:2] == ("trainees", "delete") for operation in database_client.operations)
         )
 
+    def test_video_mappings_use_the_privileged_supabase_client(self):
+        database_client = Client()
+        admin_client = Client()
+        existing_mapping = {
+            "business_id": "business-id",
+            "task_key": "1|Branding",
+            "video_folder": "MARKETING/BRANDING",
+        }
+        admin_client.select_data["video_task_mappings"] = [existing_mapping]
+        with patch("DATA_BASE.db.create_client", return_value=database_client):
+            database = DataBase("https://example.supabase.co", "test-key")
+
+        with patch.object(database, "_auth_admin_client", return_value=admin_client):
+            self.assertEqual(database.list_video_task_mappings(), [existing_mapping])
+            database.save_video_task_mapping(
+                "business-id", "1|Branding", "MARKETING/BRANDING"
+            )
+            database.save_video_task_mapping("business-id", "1|Branding", None)
+
+        self.assertIn(
+            (
+                "video_task_mappings",
+                "upsert",
+                existing_mapping,
+            ),
+            admin_client.operations,
+        )
+        self.assertIn(
+            ("video_task_mappings", "delete", None),
+            admin_client.operations,
+        )
+
     def test_presentation_cleanup_failure_is_reported_by_api(self):
         class FailingDatabase:
             def save_trainees(self, _rows, _profile):
