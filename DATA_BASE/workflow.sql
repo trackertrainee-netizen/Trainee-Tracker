@@ -16,6 +16,13 @@ create table if not exists public.training_steps (
   monitored_by text not null
 );
 
+create table if not exists public.video_task_mappings (
+  business_id uuid not null references public.businesses(id) on delete cascade,
+  task_key text not null check (length(btrim(task_key)) > 0),
+  video_folder text not null check (length(btrim(video_folder)) > 0),
+  primary key (business_id, task_key)
+);
+
 create table if not exists public.trainee_progress (
   trainee_id uuid not null references public.trainees(id) on delete cascade,
   step_index smallint not null references public.training_steps(step_index),
@@ -174,6 +181,7 @@ create policy "presentation files replace own" on storage.objects
 
 alter table public.training_modules enable row level security;
 alter table public.training_steps enable row level security;
+alter table public.video_task_mappings enable row level security;
 alter table public.trainee_progress enable row level security;
 alter table public.trainee_module_scores enable row level security;
 alter table public.businesses enable row level security;
@@ -200,6 +208,48 @@ drop policy if exists "organization designation insert developer" on public.desi
 create policy "organization designation insert developer" on public.designations
   for insert to authenticated
   with check (public.auth_role() = 'developer');
+
+drop policy if exists "video task mappings read in scope" on public.video_task_mappings;
+create policy "video task mappings read in scope" on public.video_task_mappings
+  for select to authenticated
+  using (
+    public.auth_role() = 'developer'
+    or exists (
+      select 1
+      from public.profiles profile
+      where profile.id = auth.uid()
+        and profile.role in ('business', 'business_view')
+        and profile.business_id = video_task_mappings.business_id
+    )
+    or exists (
+      select 1
+      from public.trainees t
+      join public.designations g on g.id = t.designation_id
+      join public.departments d on d.id = g.department_id
+      join public.branches b on b.id = d.branch_id
+      where t.id = public.auth_trainee_id()
+        and public.auth_role() = 'trainee'
+        and b.business_id = video_task_mappings.business_id
+    )
+  );
+
+drop policy if exists "video task mappings insert developer" on public.video_task_mappings;
+create policy "video task mappings insert developer" on public.video_task_mappings
+  for insert to authenticated
+  with check (public.auth_role() = 'developer');
+
+drop policy if exists "video task mappings update developer" on public.video_task_mappings;
+create policy "video task mappings update developer" on public.video_task_mappings
+  for update to authenticated
+  using (public.auth_role() = 'developer')
+  with check (public.auth_role() = 'developer');
+
+drop policy if exists "video task mappings delete developer" on public.video_task_mappings;
+create policy "video task mappings delete developer" on public.video_task_mappings
+  for delete to authenticated
+  using (public.auth_role() = 'developer');
+
+grant select, insert, update, delete on public.video_task_mappings to authenticated;
 
 grant insert on public.businesses, public.branches, public.departments, public.designations
   to authenticated;

@@ -1,8 +1,11 @@
 import unittest
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
+import app as server
 from DATA_BASE.db import DataBase, trainee_auth_email
+from flask import g
+from storage3.exceptions import StorageApiError
 
 
 TRAINEE_ID = "11111111-1111-4111-8111-111111111111"
@@ -260,6 +263,75 @@ class TraineeAccountTests(unittest.TestCase):
                 "presentation": None,
             },
         )
+
+    def test_removing_trainee_deletes_presentations_before_record(self):
+        database_client = Client()
+        database_client.select_data["trainee_workflow"] = [
+            {"id": TRAINEE_ID, "name": "Jane Doe"}
+        ]
+        bucket = SimpleNamespace(
+            list=Mock(return_value=[{"name": "7.pdf"}, {"name": "8.pdf"}]),
+            remove=Mock(),
+        )
+        admin_client = SimpleNamespace(
+            storage=SimpleNamespace(from_=Mock(return_value=bucket))
+        )
+        bucket.remove.side_effect = lambda _paths: self.assertFalse(
+            any(operation[:2] == ("trainees", "delete") for operation in database_client.operations)
+        )
+        with patch("DATA_BASE.db.create_client", return_value=database_client):
+            database = DataBase("https://example.supabase.co", "test-key")
+
+        with patch.object(database, "_auth_admin_client", return_value=admin_client):
+            database.save_trainees([], {"role": "developer"})
+
+        prefix = f"Jane Doe/{TRAINEE_ID}"
+        bucket.list.assert_called_once_with(prefix, {"limit": 1000})
+        bucket.remove.assert_called_once_with(
+            [f"{prefix}/7.pdf", f"{prefix}/8.pdf"]
+        )
+        self.assertIn(
+            ("trainees", "delete", None),
+            database_client.operations,
+        )
+
+    def test_storage_failure_prevents_trainee_deletion(self):
+        database_client = Client()
+        database_client.select_data["trainee_workflow"] = [
+            {"id": TRAINEE_ID, "name": "Jane Doe"}
+        ]
+        bucket = SimpleNamespace(
+            list=Mock(side_effect=RuntimeError("storage unavailable")),
+            remove=Mock(),
+        )
+        admin_client = SimpleNamespace(
+            storage=SimpleNamespace(from_=Mock(return_value=bucket))
+        )
+        with patch("DATA_BASE.db.create_client", return_value=database_client):
+            database = DataBase("https://example.supabase.co", "test-key")
+
+        with patch.object(database, "_auth_admin_client", return_value=admin_client):
+            with self.assertRaisesRegex(RuntimeError, "storage unavailable"):
+                database.save_trainees([], {"role": "developer"})
+
+        self.assertFalse(
+            any(operation[:2] == ("trainees", "delete") for operation in database_client.operations)
+        )
+
+    def test_presentation_cleanup_failure_is_reported_by_api(self):
+        class FailingDatabase:
+            def save_trainees(self, _rows, _profile):
+                raise StorageApiError("Storage unavailable", "InternalError", 500)
+
+        with server.app.test_request_context(
+            "/api/trainees", method="PUT", json=[]
+        ):
+            g.database = FailingDatabase()
+            g.profile = {"role": "developer"}
+            response, status = server.put_trainees()
+
+        self.assertEqual(status, 502)
+        self.assertIn("The trainee was not deleted", response.get_json()["error"])
 
 
 if __name__ == "__main__":
