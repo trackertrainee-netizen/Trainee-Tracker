@@ -1,6 +1,15 @@
 -- Additive workflow schema for the existing businesses/branches/departments/
 -- designations/trainees/profiles schema. This does not drop existing data.
 
+-- Run this enum migration by itself before executing the rest of this file.
+alter type public.user_role add value if not exists 'business_hr';
+
+alter table public.profiles drop constraint if exists profiles_role_check;
+alter table public.profiles add constraint profiles_role_check
+  check (
+    role::text in ('developer', 'business', 'business_hr', 'business_view', 'trainee')
+  );
+
 create table if not exists public.training_modules (
   module_index smallint primary key check (module_index between 0 and 4),
   name text not null,
@@ -140,6 +149,47 @@ set public = false,
     file_size_limit = excluded.file_size_limit,
     allowed_mime_types = excluded.allowed_mime_types;
 
+do $migration$
+declare
+  in_scope_arguments text;
+begin
+  select pg_get_function_arguments(
+    'public.in_scope(uuid, uuid, uuid)'::regprocedure
+  )
+  into in_scope_arguments;
+
+  execute format($definition$
+    create or replace function public.in_scope(%s)
+    returns boolean
+    language sql
+    stable
+    security definer
+    set search_path = public, pg_temp
+    as $function$
+      select exists (
+        select 1
+        from public.profiles profile
+        where profile.id = auth.uid()
+          and (
+            profile.role::text = 'developer'
+            or (
+              profile.role::text in ('business', 'business_view', 'business_hr')
+              and (
+                (profile.role::text = 'business_hr' and profile.business_id is null)
+                or profile.business_id = $1
+              )
+              and (profile.branch_id is null or profile.branch_id = $2)
+              and (profile.department_id is null or profile.department_id = $3)
+            )
+          )
+      );
+    $function$;
+  $definition$, in_scope_arguments);
+end;
+$migration$;
+
+grant execute on function public.in_scope(uuid, uuid, uuid) to authenticated;
+
 drop policy if exists "presentation files read in scope" on storage.objects;
 create policy "presentation files read in scope" on storage.objects
   for select to authenticated
@@ -189,6 +239,126 @@ alter table public.branches enable row level security;
 alter table public.departments enable row level security;
 alter table public.designations enable row level security;
 
+drop policy if exists "business HR manages trainees in scope" on public.trainees;
+create policy "business HR manages trainees in scope" on public.trainees
+  for all to authenticated
+  using (
+    exists (
+      select 1
+      from public.profiles profile
+      join public.designations g on g.id = trainees.designation_id
+      join public.departments d on d.id = g.department_id
+      join public.branches b on b.id = d.branch_id
+      where profile.id = auth.uid()
+        and profile.role::text = 'business_hr'
+        and public.in_scope(b.business_id, b.id, d.id)
+    )
+  )
+  with check (
+    exists (
+      select 1
+      from public.profiles profile
+      join public.designations g on g.id = trainees.designation_id
+      join public.departments d on d.id = g.department_id
+      join public.branches b on b.id = d.branch_id
+      where profile.id = auth.uid()
+        and profile.role::text = 'business_hr'
+        and public.in_scope(b.business_id, b.id, d.id)
+    )
+  );
+
+drop policy if exists "organization business read in scope" on public.businesses;
+create policy "organization business read in scope" on public.businesses
+  for select to authenticated
+  using (
+    exists (
+      select 1
+      from public.profiles profile
+      where profile.id = auth.uid()
+        and (
+          profile.role::text = 'developer'
+          or (
+            profile.role::text in ('business', 'business_view', 'business_hr')
+            and (
+              (profile.role::text = 'business_hr' and profile.business_id is null)
+              or profile.business_id = businesses.id
+            )
+          )
+        )
+    )
+  );
+
+drop policy if exists "organization branch read in scope" on public.branches;
+create policy "organization branch read in scope" on public.branches
+  for select to authenticated
+  using (
+    exists (
+      select 1
+      from public.profiles profile
+      where profile.id = auth.uid()
+        and (
+          profile.role::text = 'developer'
+          or (
+            profile.role::text in ('business', 'business_view', 'business_hr')
+            and (
+              (profile.role::text = 'business_hr' and profile.business_id is null)
+              or profile.business_id = branches.business_id
+            )
+            and (profile.branch_id is null or profile.branch_id = branches.id)
+          )
+        )
+    )
+  );
+
+drop policy if exists "organization department read in scope" on public.departments;
+create policy "organization department read in scope" on public.departments
+  for select to authenticated
+  using (
+    exists (
+      select 1
+      from public.profiles profile
+      join public.branches branch on branch.id = departments.branch_id
+      where profile.id = auth.uid()
+        and (
+          profile.role::text = 'developer'
+          or (
+            profile.role::text in ('business', 'business_view', 'business_hr')
+            and (
+              (profile.role::text = 'business_hr' and profile.business_id is null)
+              or profile.business_id = branch.business_id
+            )
+            and (profile.branch_id is null or profile.branch_id = branch.id)
+            and (profile.department_id is null or profile.department_id = departments.id)
+          )
+        )
+    )
+  );
+
+drop policy if exists "organization designation read in scope" on public.designations;
+create policy "organization designation read in scope" on public.designations
+  for select to authenticated
+  using (
+    exists (
+      select 1
+      from public.profiles profile
+      join public.departments department on department.id = designations.department_id
+      join public.branches branch on branch.id = department.branch_id
+      where profile.id = auth.uid()
+        and (
+          profile.role::text = 'developer'
+          or (
+            profile.role::text in ('business', 'business_view', 'business_hr')
+            and (
+              (profile.role::text = 'business_hr' and profile.business_id is null)
+              or profile.business_id = branch.business_id
+            )
+            and (profile.branch_id is null or profile.branch_id = branch.id)
+            and (profile.department_id is null or profile.department_id = department.id)
+          )
+        )
+    )
+  );
+
 drop policy if exists "organization business insert developer" on public.businesses;
 create policy "organization business insert developer" on public.businesses
   for insert to authenticated
@@ -218,8 +388,19 @@ create policy "video task mappings read in scope" on public.video_task_mappings
       select 1
       from public.profiles profile
       where profile.id = auth.uid()
-        and profile.role in ('business', 'business_view')
-        and profile.business_id = video_task_mappings.business_id
+        and (
+          (
+            profile.role in ('business', 'business_view')
+            and profile.business_id = video_task_mappings.business_id
+          )
+          or (
+            profile.role::text = 'business_hr'
+            and (
+              profile.business_id is null
+              or profile.business_id = video_task_mappings.business_id
+            )
+          )
+        )
     )
     or exists (
       select 1
@@ -278,12 +459,10 @@ as $$
     join public.branches b on b.id = d.branch_id
     where profile.id = auth.uid()
       and (
-        profile.role = 'developer'
+        profile.role::text = 'developer'
         or (
-          profile.role = 'business'
-          and profile.business_id = b.business_id
-          and (profile.branch_id is null or profile.branch_id = b.id)
-          and (profile.department_id is null or profile.department_id = d.id)
+          profile.role::text in ('business', 'business_hr')
+          and public.in_scope(b.business_id, b.id, d.id)
         )
       )
   );
@@ -464,27 +643,9 @@ create policy "trainee scores read in scope" on public.trainee_module_scores
 drop policy if exists "trainee scores editor write" on public.trainee_module_scores;
 create policy "trainee scores editor write" on public.trainee_module_scores
   for all to authenticated
-  using (
-    exists (
-      select 1
-      from public.trainees t
-      join public.designations g on g.id = t.designation_id
-      join public.departments d on d.id = g.department_id
-      join public.branches b on b.id = d.branch_id
-      where t.id = trainee_module_scores.trainee_id
-        and public.can_edit_scope(b.business_id, b.id, d.id)
-    )
-  )
+  using (public.can_edit_trainee_progress(trainee_module_scores.trainee_id))
   with check (
-    exists (
-      select 1
-      from public.trainees t
-      join public.designations g on g.id = t.designation_id
-      join public.departments d on d.id = g.department_id
-      join public.branches b on b.id = d.branch_id
-      where t.id = trainee_module_scores.trainee_id
-        and public.can_edit_scope(b.business_id, b.id, d.id)
-    )
+    public.can_edit_trainee_progress(trainee_module_scores.trainee_id)
     and not exists (
       select 1
       from public.training_steps s
@@ -591,17 +752,21 @@ create policy "video completion read in scope" on public.video_watch_completions
   for select to authenticated
   using (
     public.auth_trainee_id() = trainee_id
-    or (
-      public.auth_role() in ('developer', 'business')
-      and exists (
-        select 1
-        from public.trainees t
-        join public.designations g on g.id = t.designation_id
-        join public.departments d on d.id = g.department_id
-        join public.branches b on b.id = d.branch_id
-        where t.id = video_watch_completions.trainee_id
-          and public.in_scope(b.business_id, b.id, d.id)
-      )
+    or exists (
+      select 1
+      from public.profiles profile
+      join public.trainees t on t.id = video_watch_completions.trainee_id
+      join public.designations g on g.id = t.designation_id
+      join public.departments d on d.id = g.department_id
+      join public.branches b on b.id = d.branch_id
+      where profile.id = auth.uid()
+        and (
+          profile.role::text = 'developer'
+          or (
+            profile.role::text in ('business', 'business_hr')
+            and public.in_scope(b.business_id, b.id, d.id)
+          )
+        )
     )
   );
 
@@ -623,17 +788,21 @@ create policy "video replay request read in scope" on public.video_replay_reques
   for select to authenticated
   using (
     public.auth_trainee_id() = trainee_id
-    or (
-      public.auth_role() in ('developer', 'business')
-      and exists (
-        select 1
-        from public.trainees t
-        join public.designations g on g.id = t.designation_id
-        join public.departments d on d.id = g.department_id
-        join public.branches b on b.id = d.branch_id
-        where t.id = video_replay_requests.trainee_id
-          and public.in_scope(b.business_id, b.id, d.id)
-      )
+    or exists (
+      select 1
+      from public.profiles profile
+      join public.trainees t on t.id = video_replay_requests.trainee_id
+      join public.designations g on g.id = t.designation_id
+      join public.departments d on d.id = g.department_id
+      join public.branches b on b.id = d.branch_id
+      where profile.id = auth.uid()
+        and (
+          profile.role::text = 'developer'
+          or (
+            profile.role::text = 'business_hr'
+            and public.in_scope(b.business_id, b.id, d.id)
+          )
+        )
     )
   );
 
@@ -656,18 +825,47 @@ create policy "trainee requests video replay" on public.video_replay_requests
     )
   );
 
+create or replace function public.can_review_video_replay_request(p_trainee_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select exists (
+      select 1
+      from public.profiles profile
+      where profile.id = auth.uid()
+        and profile.role::text = 'developer'
+    )
+    or exists (
+      select 1
+      from public.profiles profile
+      join public.trainees t on t.id = p_trainee_id
+        join public.designations g on g.id = t.designation_id
+        join public.departments d on d.id = g.department_id
+        join public.branches b on b.id = d.branch_id
+      where profile.id = auth.uid()
+        and profile.role::text = 'business_hr'
+        and public.in_scope(b.business_id, b.id, d.id)
+    );
+$$;
+
+revoke all on function public.can_review_video_replay_request(uuid) from public;
+grant execute on function public.can_review_video_replay_request(uuid) to authenticated;
+
 drop policy if exists "business HR reviews replay request" on public.video_replay_requests;
 create policy "business HR reviews replay request" on public.video_replay_requests
   for update to authenticated
   using (
     status = 'pending'
-    and public.can_edit_trainee_progress(trainee_id)
+    and public.can_review_video_replay_request(trainee_id)
   )
   with check (
     status in ('approved', 'declined')
     and reviewed_at is not null
     and reviewed_by = auth.uid()
-    and public.can_edit_trainee_progress(trainee_id)
+    and public.can_review_video_replay_request(trainee_id)
   );
 
 drop policy if exists "trainee uses approved replay request" on public.video_replay_requests;

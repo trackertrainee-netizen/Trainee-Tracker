@@ -7,6 +7,7 @@ from postgrest.exceptions import APIError
 
 
 TRAINEE_ID = "11111111-1111-4111-8111-111111111111"
+REPLAY_ID = "22222222-2222-4222-8222-222222222222"
 VIDEO_STEP = 8
 
 
@@ -30,6 +31,9 @@ class Query:
         self.filters[column] = value
         return self
 
+    def order(self, _column, desc=False):
+        return self
+
     def maybe_single(self):
         return self
 
@@ -51,7 +55,7 @@ class Query:
             data = {"trainee_id": TRAINEE_ID} if self.client.watched else None
             return Result(data)
         if self.table_name == "video_replay_requests":
-            return Result(None)
+            return Result([])
         raise AssertionError(f"Unexpected table: {self.table_name}")
 
 
@@ -129,6 +133,32 @@ class VideoReplayTests(unittest.TestCase):
 
         self.assertEqual(status, 503)
         self.assertIn("Apply DATA_BASE/workflow.sql", response.get_json()["error"])
+
+    def test_only_hr_can_open_replay_inbox(self):
+        with server.app.test_request_context("/api/video-replay-requests"):
+            g.profile = {"role": "business"}
+            response, status = server.list_video_replay_requests()
+
+        self.assertEqual(status, 403)
+
+        with server.app.test_request_context("/api/video-replay-requests"):
+            g.profile = {"role": "business_hr"}
+            g.database = SimpleNamespace(client=Client())
+            response = server.list_video_replay_requests()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), [])
+
+    def test_standard_business_cannot_review_replay_requests(self):
+        with server.app.test_request_context(
+            f"/api/video-replay-requests/{REPLAY_ID}",
+            method="PUT",
+            json={"status": "approved"},
+        ):
+            g.profile = {"role": "business"}
+            response, status = server.review_video_replay_request(REPLAY_ID)
+
+        self.assertEqual(status, 403)
 
 
 if __name__ == "__main__":
