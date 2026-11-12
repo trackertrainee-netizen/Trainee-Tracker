@@ -109,7 +109,7 @@ function replayRequestActions(stepIndex,request,isGate=false){
  if(S.replayRequestConfirmStep===stepIndex){
   return `<div class="replay-confirm" role="group" aria-label="Confirm video replay request"><span>Send a rewatch request to your business HR?</span><button type="button" class="p" data-a="replay-request-send" data-step="${stepIndex}">Send request</button><button type="button" data-a="replay-request-cancel">Cancel</button></div>`;
  }
- return `<button type="button" class="p" data-a="replay-request-confirm" data-step="${stepIndex}">Rewatch video</button>`;
+ return `<button type="button" class="p" data-a="replay-request-confirm" data-step="${stepIndex}">Request replay</button>`;
 }
 function videoModal(){
  if(S.user.role==="trainee"&&S.videoStep!=null){
