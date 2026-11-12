@@ -645,12 +645,7 @@ def _video_map_from_database():
         .data
     )
     names = {row["id"]: row["name"] for row in businesses}
-    mappings = (
-        g.database.client.table("video_task_mappings")
-        .select("business_id,task_key,video_folder")
-        .execute()
-        .data
-    )
+    mappings = g.database.list_video_task_mappings()
     data = {}
     for mapping in mappings:
         business = names.get(mapping["business_id"])
@@ -664,7 +659,7 @@ def _video_map_database_error(exc):
     if getattr(exc, "code", None) == "PGRST205":
         return jsonify(error="Video mapping schema is unavailable. Apply DATA_BASE/workflow.sql in Supabase."), 503
     if getattr(exc, "code", None) == "42501":
-        return jsonify(error="Your account is not allowed to access video mappings."), 403
+        return jsonify(error="Server access to video mappings is denied. Check the Supabase table grants."), 503
     return jsonify(error="Could not access video mappings in Supabase."), 502
 
 
@@ -672,6 +667,9 @@ def _video_map_database_error(exc):
 def get_video_map():
     try:
         return jsonify(_video_map_from_database())
+    except RuntimeError as exc:
+        app.logger.error("Could not access video mappings in Supabase: %s", exc)
+        return jsonify(error=str(exc)), 503
     except APIError as exc:
         return _video_map_database_error(exc)
 
@@ -710,21 +708,13 @@ def put_video_map():
         )
         if not business_row:
             return jsonify(error="Choose an existing business."), 400
-        query = g.database.client.table("video_task_mappings")
-        if folder:
-            query.upsert(
-                {
-                    "business_id": business_row["id"],
-                    "task_key": key.strip(),
-                    "video_folder": folder,
-                },
-                on_conflict="business_id,task_key",
-            ).execute()
-        else:
-            query.delete().eq("business_id", business_row["id"]).eq(
-                "task_key", key.strip()
-            ).execute()
+        g.database.save_video_task_mapping(
+            business_row["id"], key.strip(), folder
+        )
         return jsonify(_video_map_from_database())
+    except RuntimeError as exc:
+        app.logger.error("Could not access video mappings in Supabase: %s", exc)
+        return jsonify(error=str(exc)), 503
     except APIError as exc:
         return _video_map_database_error(exc)
 

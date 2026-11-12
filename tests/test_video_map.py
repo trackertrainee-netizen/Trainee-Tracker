@@ -1,5 +1,4 @@
 import unittest
-from types import SimpleNamespace
 
 import app as server
 from flask import g
@@ -77,10 +76,34 @@ class Client:
         return Query(self, name)
 
 
+class Database:
+    def __init__(self, client):
+        self.client = client
+
+    def list_video_task_mappings(self):
+        if self.client.error:
+            raise self.client.error
+        return list(self.client.mappings)
+
+    def save_video_task_mapping(self, business_id, task_key, folder):
+        if self.client.error:
+            raise self.client.error
+        self.client.mappings = [
+            row for row in self.client.mappings
+            if (row["business_id"], row["task_key"]) != (business_id, task_key)
+        ]
+        if folder:
+            self.client.mappings.append({
+                "business_id": business_id,
+                "task_key": task_key,
+                "video_folder": folder,
+            })
+
+
 class VideoMapTests(unittest.TestCase):
     def setUp(self):
         self.client = Client()
-        self.database = SimpleNamespace(client=self.client)
+        self.database = Database(self.client)
 
     def test_get_returns_business_name_keyed_mappings_in_current_scope(self):
         self.client.businesses = [{"id": MAGNUS_ID, "name": "Magnus"}]
@@ -165,6 +188,32 @@ class VideoMapTests(unittest.TestCase):
 
         self.assertEqual(status, 503)
         self.assertIn("Apply DATA_BASE/workflow.sql", response.get_json()["error"])
+
+    def test_missing_service_role_key_returns_actionable_error(self):
+        self.client.error = RuntimeError(
+            "Set SUPABASE_SERVICE_ROLE_KEY in the server environment."
+        )
+        with server.app.test_request_context("/api/video-map"):
+            g.profile = {"role": "developer"}
+            g.database = self.database
+            get_response, get_status = server.get_video_map()
+        with server.app.test_request_context(
+            "/api/video-map",
+            method="PUT",
+            json={
+                "business": "Magnus",
+                "key": "1|Branding",
+                "folder": "MARKETING/BRANDING",
+            },
+        ):
+            g.profile = {"role": "developer"}
+            g.database = self.database
+            put_response, put_status = server.put_video_map()
+
+        self.assertEqual(get_status, 503)
+        self.assertIn("SUPABASE_SERVICE_ROLE_KEY", get_response.get_json()["error"])
+        self.assertEqual(put_status, 503)
+        self.assertIn("SUPABASE_SERVICE_ROLE_KEY", put_response.get_json()["error"])
 
 
 if __name__ == "__main__":
