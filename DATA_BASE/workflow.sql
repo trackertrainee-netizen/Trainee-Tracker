@@ -60,12 +60,27 @@ create table if not exists public.video_replay_requests (
   status text not null default 'pending' check (status in ('pending', 'approved', 'declined', 'used')),
   created_at timestamptz not null default now(),
   reviewed_at timestamptz,
-  reviewed_by uuid references public.profiles(id),
-  check (
+  reviewed_by uuid references public.profiles(id) on delete set null,
+  constraint video_replay_requests_review_audit_check check (
     (status = 'pending' and reviewed_at is null and reviewed_by is null)
-    or (status <> 'pending' and reviewed_at is not null and reviewed_by is not null)
+    or (status <> 'pending' and reviewed_at is not null)
   )
 );
+
+alter table public.video_replay_requests
+  drop constraint if exists video_replay_requests_reviewed_by_fkey;
+alter table public.video_replay_requests
+  add constraint video_replay_requests_reviewed_by_fkey
+  foreign key (reviewed_by) references public.profiles(id) on delete set null;
+alter table public.video_replay_requests
+  drop constraint if exists video_replay_requests_check;
+alter table public.video_replay_requests
+  drop constraint if exists video_replay_requests_review_audit_check;
+alter table public.video_replay_requests
+  add constraint video_replay_requests_review_audit_check check (
+    (status = 'pending' and reviewed_at is null and reviewed_by is null)
+    or (status <> 'pending' and reviewed_at is not null)
+  );
 
 create unique index if not exists idx_video_replay_requests_pending
   on public.video_replay_requests (trainee_id, step_index)
