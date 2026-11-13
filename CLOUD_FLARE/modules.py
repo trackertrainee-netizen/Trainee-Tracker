@@ -1,5 +1,4 @@
 import glob
-import json
 import os
 import re
 import shutil
@@ -207,30 +206,6 @@ def upload_directory_to_s3(directory_path, s3_path, env, progress, cancel_event=
     progress(100)
 
 
-def _can_copy_to_hls(file_path):
-    probe = subprocess.run(
-        [
-            _tool_path("ffprobe"), "-v", "error",
-            "-show_entries", "stream=codec_type,codec_name,pix_fmt", "-of", "json",
-            os.fspath(file_path),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    streams = json.loads(probe.stdout).get("streams", [])
-    video = next((stream for stream in streams if stream.get("codec_type") == "video"), None)
-    if video is None:
-        return False
-
-    audio = next((stream for stream in streams if stream.get("codec_type") == "audio"), None)
-    return (
-        video.get("codec_name") == "h264"
-        and video.get("pix_fmt") in ("yuv420p", "yuvj420p")
-        and (audio is None or audio.get("codec_name") == "aac")
-    )
-
-
 def _video_duration(file_path):
     """Duration in seconds, or None if it cannot be determined."""
     try:
@@ -296,19 +271,14 @@ def upload_video_as_hls(file_path, folder_name, progress=None, cancel_event=None
         playlist_path = os.path.join(hls_dir, "index.m3u8")
         segment_pattern = os.path.join(hls_dir, "segment_%03d.ts")
         _raise_if_cancelled(cancel_event)
-        can_copy = _can_copy_to_hls(file_path)
-        _raise_if_cancelled(cancel_event)
-        codec_args = (
-            ["-c:v", "copy", "-c:a", "copy"]
-            if can_copy
-            else ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-c:a", "aac"]
-        )
         report("converting", 0)
         _run_ffmpeg_hls(
             [
                 _tool_path("ffmpeg"), "-y", "-nostdin", "-i", os.fspath(file_path),
                 "-map", "0:v:0", "-map", "0:a:0?",
-                *codec_args,
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                "-c:a", "aac", "-sc_threshold", "0",
+                "-force_key_frames", "expr:gte(t,n_forced*6)",
                 "-hls_time", "6", "-hls_playlist_type", "vod",
                 "-hls_flags", "independent_segments",
                 "-hls_segment_filename", segment_pattern,

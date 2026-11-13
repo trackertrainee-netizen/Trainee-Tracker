@@ -1323,6 +1323,7 @@ function playVideo(folder,pid="video-player",sid="video-player-status",autoplay=
  }
  const playlist="/api/videos/"+folder.split("/").map(encodeURIComponent).join("/")+"/index.m3u8";
  player.hidden=false;
+ player.preload="auto";
  player.onerror=()=>{status.textContent="Could not load this video. Check the playlist and storage."};
  const tryAutoplay=()=>{
   if(!autoplay)return;
@@ -1344,7 +1345,7 @@ function playVideo(folder,pid="video-player",sid="video-player-status",autoplay=
   status.textContent="HLS playback is not supported in this browser.";
   return;
  }
- const hls=new window.Hls();
+ const hls=new window.Hls({maxBufferLength:60,maxMaxBufferLength:120,startFragPrefetch:true});
  S.hls=hls;
  hls.on(window.Hls.Events.MANIFEST_PARSED,()=>{
   status.textContent="Ready to play.";
