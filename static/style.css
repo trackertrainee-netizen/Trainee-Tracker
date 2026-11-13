@@ -309,8 +309,13 @@ td button.sm{white-space:nowrap}
 .hyi .sp{align-items:center;margin-bottom:0.625rem}
 .hy-up{cursor:pointer;padding:0.375rem 0.875rem;border:1px solid var(--bd2);border-radius:6.1875rem;font-size:0.8125rem;font-weight:600;background:var(--card)}
 .hy-up:hover{border-color:var(--gold)}.hy-up.is-busy{opacity:.4;pointer-events:none}
-.hy-img{display:block;max-width:100%;max-height:70vh;margin:0.5rem 0 0.75rem;border-radius:0.75rem;border:1px solid var(--bd)}
-.hy-pdf{display:block;width:100%;height:min(70vh,48rem);margin:0.5rem 0 0.75rem;border:1px solid var(--bd);border-radius:0.75rem;background:var(--card)}
+.hy-viewer{margin:.5rem 0 .75rem;border:1px solid var(--bd);border-radius:.75rem;overflow:hidden}
+.hy-viewer-controls{display:flex;align-items:center;justify-content:flex-end;gap:.5rem;padding:.5rem .75rem;border-bottom:1px solid var(--bd);background:var(--card)}
+.hy-viewer-controls>span{min-width:3rem;text-align:center;font-size:.8125rem;font-variant-numeric:tabular-nums}
+.hy-viewer-stage{max-height:70vh;overflow:auto;background:var(--card)}
+.hy-viewer-stage canvas{display:block}
+.hy-img{display:block;max-width:none;height:auto}
+.hy-pdf-status{padding:.75rem}
 
 /* ---- Dropdown option colours (hover / selected) */
 option{background:var(--card);color:var(--tx)}

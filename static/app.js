@@ -192,7 +192,7 @@ const mv=mi=>ST.filter(x=>x.m===mi&&x.t==="VIDEO").reduce((a,x)=>a+x.min,0);
 // ---- State
 const BIZ=BUSINESSES;
 const biz=t=>t.biz||"";
-let S={t:[],sel:null,upload:false,video:false,videoStep:null,videoAutoplay:false,replayGateStep:null,replayGateMsg:"",replayRequestConfirmStep:null,completedVideoSteps:[],videoReplayRequests:[],videoCompletionError:"",videoFinished:false,videoWatchSaved:false,videoReplayRequested:false,videoReturnAt:null,videoLatestTime:0,videoSeekTarget:null,hls:null,view:"overview",bv:"overview",nav:"dashboard",map:false,replayInbox:false,replayInboxData:[],replayInboxMsg:"",pendingReplayCount:0,userListModal:false,managedUsers:[],usersLoading:false,usersMsg:"",userSearch:"",userReturnToList:false,settings:false,userManagement:false,userModal:false,userDraft:null,userMsg:"",organization:false,permissions:false,permissionDraft:null,permissionMsg:"",accountModal:false,accountDone:false,accountMsg:"",orgEntity:"business",orgParent:"",orgName:"",orgMsg:"",vmap:{},folders:[],mb:"Magnus",mm:0,mt:null,mf:"",mplay:"",mmsg:"",mfstat:"",himg:{},hmsg:{},user:null,options:{businesses:[],departments:[],designations:[]},addBiz:"",addDept:"",addDesg:"",addmsg:"",loginmsg:""};
+let S={t:[],sel:null,upload:false,video:false,videoStep:null,videoAutoplay:false,replayGateStep:null,replayGateMsg:"",replayRequestConfirmStep:null,completedVideoSteps:[],videoReplayRequests:[],videoCompletionError:"",videoFinished:false,videoWatchSaved:false,videoReplayRequested:false,videoReturnAt:null,videoLatestTime:0,videoSeekTarget:null,hls:null,view:"overview",bv:"overview",nav:"dashboard",map:false,replayInbox:false,replayInboxData:[],replayInboxMsg:"",pendingReplayCount:0,userListModal:false,managedUsers:[],usersLoading:false,usersMsg:"",userSearch:"",userReturnToList:false,settings:false,userManagement:false,userModal:false,userDraft:null,userMsg:"",organization:false,permissions:false,permissionDraft:null,permissionMsg:"",accountModal:false,accountDone:false,accountMsg:"",orgEntity:"business",orgParent:"",orgName:"",orgMsg:"",vmap:{},folders:[],mb:"Magnus",mm:0,mt:null,mf:"",mplay:"",mmsg:"",mfstat:"",himg:{},hmsg:{},hzoom:{},hpdf:{},user:null,options:{businesses:[],departments:[],designations:[]},addBiz:"",addDept:"",addDesg:"",addmsg:"",loginmsg:""};
 let activeVideoUpload=null,replayNotificationTimer=null;
 // ---- Supabase Auth-backed roles
 const sameName=(a,b)=>String(a||"").trim().toLowerCase()===String(b||"").trim().toLowerCase();
@@ -365,6 +365,7 @@ function render(){
  }else ap.replaceChildren(...tmp.childNodes);
  }
  if(viewChanged){S.lv=vk;ap.classList.remove("an");void ap.offsetWidth;ap.classList.add("an");clearTimeout(S.antm);S.antm=setTimeout(()=>ap.classList.remove("an"),1400)}
+ mountHierarchyPdfs(ap);
  if(S.add){const i=document.getElementById("nm");if(i)i.focus()}
  else if(t&&(S.modal!=null||S.edit)){const i=document.getElementById(S.edit?"en-nm":"ms-sc");if(i){i.focus();if(S.edit)i.select()}}
 }
@@ -636,11 +637,86 @@ function hierImages(){
   const im=S.himg[b],msg=S.hmsg[b]||"",busy=msg.endsWith("…");
   const url="/api/hierarchy-images/"+encodeURIComponent(b)+"?v="+encodeURIComponent(im?im.at:"");
   const isPdf=im&&im.type==="application/pdf";
-  const preview=im?(isPdf?`<iframe class="hy-pdf" src="${url}" title="${esc(b)} hierarchy PDF"></iframe><a href="${url}" target="_blank" rel="noopener">Open PDF in a new tab</a>`:`<a href="${url}" target="_blank" rel="noopener"><img class="hy-img" src="${url}" alt="${esc(b)} hierarchy"></a>`):`<div class="mu">No hierarchy file uploaded for ${esc(b)} yet.</div>`;
+  const zoom=S.hzoom[b]||1;
+  const controls=`<div class="hy-viewer-controls" role="group" aria-label="${esc(b)} hierarchy zoom controls"><button type="button" class="sm" data-a="hyzoom-out" data-b="${esc(b)}" aria-label="Zoom out">−</button><span data-hy-zoom>${Math.round(zoom*100)}%</span><button type="button" class="sm" data-a="hyzoom-in" data-b="${esc(b)}" aria-label="Zoom in">+</button><button type="button" class="sm" data-a="hyzoom-fit" data-b="${esc(b)}">Fit</button></div>`;
+  const preview=im?(isPdf?`<div class="hy-viewer" data-hy-pdf data-b="${esc(b)}" data-url="${esc(url)}">${controls}<div class="hy-viewer-stage"><canvas aria-label="${esc(b)} hierarchy"></canvas><div class="mu hy-pdf-status" role="status" aria-live="polite">Loading hierarchy…</div></div></div>`:`<div class="hy-viewer" data-b="${esc(b)}">${controls}<div class="hy-viewer-stage"><img class="hy-img" data-hy-image src="${url}" alt="${esc(b)} hierarchy" style="width:${zoom*100}%"></div></div>`):`<div class="mu">No hierarchy file uploaded for ${esc(b)} yet.</div>`;
   return `<div class="card hyi"><div class="sp"><h2>${esc(b)} hierarchy</h2>${allow("hier")?`<div class="row">${im?`<button type="button" class="sm dgr" data-a="hyremove" data-b="${esc(b)}"${busy?" disabled":""}>Remove</button>`:""}<label class="hy-up${busy?" is-busy":""}">${im?"Replace file":"Upload image/PDF"}<input type="file" class="hy-file" data-b="${esc(b)}" accept="image/png,image/jpeg,image/gif,image/webp,application/pdf" hidden${busy?" disabled":""}></label></div>`:""}</div>
   ${im?`${preview}<div class="mu">${esc(im.name)} · ${pdfSize(im.size)} · uploaded ${fmt(im.at)}</div>`:preview}
   ${msg?`<div class="mu" role="status" style="margin-top:6px">${esc(msg)}</div>`:""}</div>`}).join("");
 }
+const HY_PDF_WORKER="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+function mountHierarchyPdfs(root){
+ const viewers=root.querySelectorAll("[data-hy-pdf]");
+ if(!viewers.length)return;
+ if(!window.pdfjsLib){
+  viewers.forEach(view=>{view.querySelector(".hy-pdf-status").textContent="The hierarchy viewer could not be loaded."});
+  return;
+ }
+ window.pdfjsLib.GlobalWorkerOptions.workerSrc=HY_PDF_WORKER;
+ viewers.forEach(view=>{
+  const business=view.dataset.b,url=view.dataset.url;
+  let state=S.hpdf[business];
+  if(!state||state.url!==url){
+   if(state&&state.doc)state.doc.destroy();
+   state=S.hpdf[business]={url,zoom:S.hzoom[business]||1,doc:null,loading:null,page:null,renderTask:null,renderId:0};
+  }
+  if(!state.loading)state.loading=window.pdfjsLib.getDocument(url).promise.then(doc=>{state.doc=doc;return doc}).catch(error=>{state.loading=null;throw error});
+  state.loading.then(doc=>drawHierarchyPdf(view,state,doc)).catch(error=>{
+   const status=view.querySelector(".hy-pdf-status");
+   if(status&&status.isConnected)status.textContent="Could not display this PDF: "+(error instanceof Error?error.message:String(error));
+  });
+ });
+}
+async function drawHierarchyPdf(view,state,doc){
+ if(!view.isConnected)return;
+ const renderId=state.renderId=(state.renderId||0)+1;
+ const stage=view.querySelector(".hy-viewer-stage"),canvas=view.querySelector("canvas"),status=view.querySelector(".hy-pdf-status");
+ if(!stage||!canvas||!status)return;
+ const width=stage.clientWidth;
+ if(!width)return;
+ try{
+  const page=state.page||(state.page=await doc.getPage(1));
+  if(!view.isConnected||state.renderId!==renderId)return;
+  if(state.renderTask){
+   const previous=state.renderTask;
+   previous.cancel();
+   try{await previous.promise}catch(error){if(!error||error.name!=="RenderingCancelledException")throw error}
+  }
+  if(!view.isConnected||state.renderId!==renderId)return;
+  const base=page.getViewport({scale:1}),scale=width/base.width*state.zoom,viewport=page.getViewport({scale});
+  const ratio=window.devicePixelRatio||1,context=canvas.getContext("2d");
+  canvas.width=Math.floor(viewport.width*ratio);canvas.height=Math.floor(viewport.height*ratio);
+  canvas.style.width=viewport.width+"px";canvas.style.height=viewport.height+"px";
+  status.textContent="";
+  const task=page.render({canvasContext:context,viewport,transform:ratio===1?null:[ratio,0,0,ratio,0,0]});
+  state.renderTask=task;
+  await task.promise;
+  if(state.renderTask===task)state.renderTask=null;
+ }catch(error){
+  if(error&&error.name==="RenderingCancelledException")return;
+  if(state.renderId!==renderId)return;
+  state.renderTask=null;
+  status.textContent="Could not display this PDF: "+(error instanceof Error?error.message:String(error));
+ }
+}
+function setHierarchyZoom(button){
+ const business=button.dataset.b,action=button.dataset.a;
+ const current=S.hzoom[business]||1,next=action==="hyzoom-fit"?1:Math.max(.5,Math.min(3,current+(action==="hyzoom-in"?.25:-.25)));
+ S.hzoom[business]=next;
+ const viewer=Array.from(document.querySelectorAll(".hy-viewer")).find(item=>item.dataset.b===business);
+ if(!viewer)return;
+ const label=viewer.querySelector("[data-hy-zoom]");if(label)label.textContent=Math.round(next*100)+"%";
+ const image=viewer.querySelector("[data-hy-image]");
+ if(image)image.style.width=next*100+"%";
+ const pdf=viewer.matches("[data-hy-pdf]")?viewer:viewer.querySelector("[data-hy-pdf]");
+ if(pdf){const state=S.hpdf[business];if(state){state.zoom=next;if(state.doc)drawHierarchyPdf(pdf,state,state.doc)}}
+}
+window.addEventListener("resize",()=>{
+ document.querySelectorAll("[data-hy-pdf]").forEach(view=>{
+  const state=S.hpdf[view.dataset.b];
+  if(state&&state.doc)drawHierarchyPdf(view,state,state.doc);
+ });
+});
 async function hierUpload(inp){
  if(!allow("hier"))return;const b=inp.dataset.b,f=inp.files[0];inp.value="";if(!f)return;
  const setMsg=m=>{S.hmsg[b]=m;if(S.bv==="hierarchy"&&!S.sel)render()};
@@ -800,6 +876,7 @@ document.addEventListener("click",e=>{
  if(profileMenu&&!profileMenu.contains(e.target))profileMenu.open=false;
  const b=e.target.closest("[data-a]");if(!b)return;const a=b.dataset.a,t=S.t.find(x=>x.id===S.sel);
  let autoPlayVideoStep=null;
+ if(a==="hyzoom-in"||a==="hyzoom-out"||a==="hyzoom-fit")return setHierarchyZoom(b);
  if(a==="password-toggle"){const input=document.getElementById(b.dataset.target);if(!input)return;const visible=input.type==="password";input.type=visible?"text":"password";b.setAttribute("aria-label",visible?"Hide password":"Show password");b.title=visible?"Hide password":"Show password";b.innerHTML=visible?EYE_OFF:EYE;return}
  if(a==="logout")return logout();
  if(["cmp","go","start","next"].includes(a)&&!allow("work"))return;
