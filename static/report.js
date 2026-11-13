@@ -89,6 +89,8 @@ function reportDashboard(bz){ // bz = business name for the business-wise view, 
  const avgProg=rptAvg(rows.map(r=>r.prog)),avgScore=rptAvg(rows.filter(r=>r.avgScore!=null).map(r=>r.avgScore));
  const avgPace=rptAvg(rows.filter(r=>r.pace!=null).map(r=>r.pace));
  const kpi=(l,v,s)=>`<div class="tl"><span class="mu">${l}</span><b>${v}</b><span class="mu">${s}</span></div>`;
+ const kpis=`${kpi("Trainees",n,"enrolled")}${kpi("Completed",done,"all tasks completed")}${kpi("Avg progress",rptPct(avgProg),"of "+ST.length+" steps")}${kpi("Avg score",avgScore==null?"–":avgScore.toFixed(1)+" / "+MAXSC,"scored modules")}${kpi("Avg pace",rptPct(avgPace),"time vs plan")}${kpi("Stalled",stalled.length,RPT_STALL_DAYS+"+ days idle")}`;
+ const reportTitle=`<h2 class="rp-title" aria-label="${esc(bz?bz+" report":"Overall report")}">${rptLetters(bz?bz+" report":"Overall report")}</h2>`;
 
  // Module progress: average completion and average score per module
  const mods=MODS.map((m,mi)=>{
@@ -124,8 +126,8 @@ function reportDashboard(bz){ // bz = business name for the business-wise view, 
  const board=`<div class="card"><div class="sp"><h2>Trainee leaderboard</h2>${allow("csv")?`<button class="sm" data-a="report-csv" data-biz="${esc(bz||"")}">Export report CSV</button>`:""}</div><div class="sc"><table><tr><th>#</th><th>Trainee</th><th>Business</th><th>Department</th><th>Progress</th><th>Avg score</th><th>Pace</th><th>Last activity</th><th>Status</th></tr>${
   sorted.map((r,i)=>`<tr><td>${i+1}</td><td><b>${esc(r.t.name)}</b></td><td>${esc(biz(r.t))}</td><td>${esc(r.t.dept||"")}</td><td><div class="rp-cell">${rptBar(r.prog)}<span>${r.ts.completedCount}/${r.ts.steps}</span></div></td><td>${r.avgScore==null?"–":r.avgScore.toFixed(1)}</td><td>${rptPct(r.pace)}</td><td>${r.last?new Date(r.last).toLocaleDateString():"–"}</td><td><span class="rp-pill ${RPT_STATE_CLASS[r.state]||""}">${esc(r.state)}</span></td></tr>`).join("")}</table></div><div class="mu">Pace = time taken as % of planned time on completed steps (under 100% is faster than plan). Avg score is across scored modules only.</div></div>`;
 
- return `<div class="rp${go?" rp-go":""}"><h2 class="rp-title" aria-label="${esc(bz?bz+" report":"Overall report")}">${rptLetters(bz?bz+" report":"Overall report")}</h2>
-  <div class="tg">${kpi("Trainees",n,done+" completed")}${kpi("Avg progress",rptPct(avgProg),"of "+ST.length+" steps")}${kpi("Avg score",avgScore==null?"–":avgScore.toFixed(1)+" / "+MAXSC,"scored modules")}${kpi("Avg pace",rptPct(avgPace),"time vs plan")}${kpi("Stalled",stalled.length,RPT_STALL_DAYS+"+ days idle")}</div>
+ return `<div class="rp${go?" rp-go":""}">${reportTitle}
+  <div class="tg">${kpis}</div>
   <div class="rp-charts"><div class="card"><h2>Status mix</h2><div class="rp-donut">${rptDonut(cnt,n)}<div>${statusHtml}</div></div></div><div class="card"><h2>Completion and score by module</h2>${rptColumns(mods)}</div><div class="card"><h2>Steps completed per week</h2>${rptTrend(rows)}</div><div class="card"><h2>Progress vs score</h2>${rptScatter(rows)}<div class="mu">Each dot is a trainee, colored by status.</div></div></div>
   <div class="rp-grid"><div class="card"><h2>Module progress</h2>${modHtml}</div>
   <div><div class="card"><h2>Planned vs actual time</h2>${typeHtml}<div class="rp-key"><span><i class="rp-plan"></i>Planned</span><span><i class="rp-act"></i>Actual</span><span><i class="rp-over"></i>Over plan</span></div></div></div></div>

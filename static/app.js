@@ -754,10 +754,13 @@ function list(){
  const st=(l,v,sub)=>`<div class="tl"><span class="mu">${l}</span><b>${v}</b><span class="mu">${sub}</span></div>`;
  const title=!ov?S.view:S.nav==="businesses"?"Businesses":S.nav==="trainees"?"Trainees":"Dashboard";
  const desc=!ov?`Follow every ${esc(S.view)} trainee through ${MODS.length} modules and ${ST.length} tasks, one step at a time.`:S.nav==="trainees"?"View and search trainees across the businesses in your scope.":S.nav==="businesses"?"Choose a business to view its trainees and hierarchy.":"Overall overview across all businesses. Use the Business tab to open a business and see its trainees and hierarchy.";
+ const showReport=S.bv==="overview"&&S.user&&S.user.role!=="trainee"&&(!ov||S.nav==="dashboard");
+ const hideSummary=!!(showReport&&ov&&S.nav==="dashboard");
+ const report=showReport?reportDashboard(ov?"":S.view):"";
  return `${!ov&&!oneBiz()?'<button class="bk-btn" data-a="allbiz">← All businesses</button>':""}<div class="ph"><h1>${esc(title)}</h1><div class="mu">${desc}</div></div>
- ${ov&&S.nav==="dashboard"?"":`<label class="fl vw"><span>View</span><select id="view">${(ov?[["overview","Overview"],["hierarchy","Hierarchy"]]:[["overview","Report"],["trainees","Trainees"],["hierarchy","Hierarchy"]]).map(([v,n])=>`<option value="${v}"${S.bv===v?" selected":""}>${n}</option>`).join("")}</select></label>`}
- <div class="tg">${st("Total trainees",k.n,"enrolled")}${st("In progress",k.ip,"working through steps")}${st("Completed",k.dn,"all tasks completed")}</div>
- ${S.bv==="overview"&&S.user&&S.user.role!=="trainee"&&(!ov||S.nav==="dashboard")?reportDashboard(ov?"":S.view):""}
+ <label class="fl vw"><span>View</span><select id="view">${(ov?[["overview","Overview"],["hierarchy","Hierarchy"]]:[["overview","Report"],["trainees","Trainees"],["hierarchy","Hierarchy"]]).map(([v,n])=>`<option value="${v}"${S.bv===v?" selected":""}>${n}</option>`).join("")}</select></label>
+ ${hideSummary&&report?"":`<div class="tg">${st("Total trainees",k.n,"enrolled")}${st("In progress",k.ip,"working through steps")}${st("Completed",k.dn,"all tasks completed")}</div>`}
+ ${report}
  <div id="tl">${listBody()}</div>`;
 }
 // ---- Add trainee pop-up form
