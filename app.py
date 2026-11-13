@@ -902,8 +902,8 @@ def put_trainees():
             error="Could not remove the trainee's presentations. The trainee was not deleted; try again or contact an administrator."
         ), 502
     except AuthApiError:
-        app.logger.exception("Could not complete the trainee login operation in Supabase Auth")
-        return jsonify(error="Could not complete the trainee login account operation."), 502
+        app.logger.exception("Could not create trainee login in Supabase Auth")
+        return jsonify(error="Could not create the trainee login account."), 502
     except APIError as exc:
         app.logger.exception("Could not save trainee workflow to Supabase")
         if getattr(exc, "code", None) == "42501":

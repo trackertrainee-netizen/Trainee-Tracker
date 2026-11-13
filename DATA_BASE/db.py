@@ -429,17 +429,6 @@ class DataBase:
                 ]
                 if paths:
                     bucket.remove(paths)
-                linked_profiles = (
-                    admin.table("profiles")
-                    .select("id")
-                    .eq("trainee_id", trainee_id)
-                    .execute()
-                    .data
-                )
-                for linked_profile in linked_profiles:
-                    user_id = linked_profile["id"]
-                    admin.auth.admin.delete_user(user_id)
-                    admin.table("profiles").delete().eq("id", user_id).execute()
                 self.client.table("trainees").delete().eq("id", trainee_id).execute()
 
         return len(rows)

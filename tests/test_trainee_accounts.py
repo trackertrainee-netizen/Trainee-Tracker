@@ -67,17 +67,12 @@ class Query:
                 {"id": TRAINEE_ID, "name": "Jane Doe"} if self.table == "trainees" else [],
             )
             return SimpleNamespace(data=data)
-        if self.operation == "delete" and hasattr(self.client, self.table):
-            column, value = self.filter
-            records = getattr(self.client, self.table)
-            records[:] = [row for row in records if row.get(column) != value]
         return Result()
 
 
 class Client:
     def __init__(self):
         self.operations = []
-        self.profiles = []
         self.auth = SimpleNamespace(
             admin=SimpleNamespace(
                 create_user=self.create_user,
@@ -274,14 +269,13 @@ class TraineeAccountTests(unittest.TestCase):
         database_client.select_data["trainee_workflow"] = [
             {"id": TRAINEE_ID, "name": "Jane Doe"}
         ]
-        admin_client = Client()
-        admin_client.select_data["profiles"] = [{"id": AUTH_USER_ID}]
-        admin_client.profiles = [{"id": AUTH_USER_ID}]
         bucket = SimpleNamespace(
             list=Mock(return_value=[{"name": "7.pdf"}, {"name": "8.pdf"}]),
             remove=Mock(),
         )
-        admin_client.storage = SimpleNamespace(from_=Mock(return_value=bucket))
+        admin_client = SimpleNamespace(
+            storage=SimpleNamespace(from_=Mock(return_value=bucket))
+        )
         bucket.remove.side_effect = lambda _paths: self.assertFalse(
             any(operation[:2] == ("trainees", "delete") for operation in database_client.operations)
         )
@@ -300,12 +294,6 @@ class TraineeAccountTests(unittest.TestCase):
             ("trainees", "delete", None),
             database_client.operations,
         )
-        self.assertEqual(admin_client.deleted_user_id, AUTH_USER_ID)
-        self.assertIn(
-            ("profiles", "delete", None),
-            admin_client.operations,
-        )
-        self.assertEqual(admin_client.profiles, [])
 
     def test_storage_failure_prevents_trainee_deletion(self):
         database_client = Client()
