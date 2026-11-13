@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Business hierarchy</title>
+<style>
+*{box-sizing:border-box}
+html,body{width:100%;height:100%;margin:0}
+body{background:#242424;color:#fff;font:14px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}
+.toolbar{position:fixed;z-index:1;inset:0 0 auto;display:flex;align-items:center;justify-content:center;gap:8px;min-height:52px;padding:8px 12px;background:#303030}
+.toolbar button{min-width:40px;height:36px;border:1px solid #666;border-radius:6px;background:#3c3c3c;color:inherit;font:inherit;cursor:pointer}
+.toolbar button:hover{background:#4b4b4b}
+#zoom-value{min-width:54px;text-align:center;font-variant-numeric:tabular-nums}
+.stage{position:absolute;inset:52px 0 0;display:flex;overflow:auto;padding:16px;align-items:flex-start;justify-content:flex-start}
+.stage canvas,.stage img{display:block;flex:none;margin:auto;background:#fff}
+#status{position:fixed;inset:52px 0 0;display:grid;place-items:center;padding:24px;color:#ddd;text-align:center;pointer-events:none}
+#status:empty{display:none}
+@media(max-width:480px){.stage{padding:8px}.toolbar{gap:6px}.toolbar button{min-width:36px}}
+</style>
+</head>
+<body>
+<nav class="toolbar" aria-label="Hierarchy zoom controls">
+<button id="zoom-out" type="button" aria-label="Zoom out" title="Zoom out">−</button>
+<output id="zoom-value" aria-live="polite">100%</output>
+<button id="zoom-in" type="button" aria-label="Zoom in" title="Zoom in">+</button>
+<button id="zoom-fit" type="button" aria-label="Fit full hierarchy" title="Fit full hierarchy">Fit</button>
+</nav>
+<main class="stage" id="stage"></main>
+<div id="status" role="status" aria-live="polite">Loading hierarchy…</div>
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
+<script>
+const params=new URLSearchParams(location.search),business=params.get("business");
+const stage=document.getElementById("stage"),status=document.getElementById("status"),zoomValue=document.getElementById("zoom-value");
+let zoom=1,kind="",image=null,pdfPage=null,pdfTask=null,pdfRenderId=0;
+const workerUrl="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+const updateZoomLabel=()=>{zoomValue.textContent=Math.round(zoom*100)+"%"};
+function fitScale(width,height){
+ const availableWidth=Math.max(1,stage.clientWidth-32),availableHeight=Math.max(1,stage.clientHeight-32);
+ return Math.min(availableWidth/width,availableHeight/height);
+}
+async function drawPdf(){
+ if(!pdfPage)return;
+ const renderId=++pdfRenderId;
+ try{
+  if(pdfTask){
+   const previous=pdfTask;
+   previous.cancel();
+   try{await previous.promise}catch(error){if(!error||error.name!=="RenderingCancelledException")throw error}
+  }
+  if(renderId!==pdfRenderId)return;
+  const base=pdfPage.getViewport({scale:1}),viewport=pdfPage.getViewport({scale:fitScale(base.width,base.height)*zoom});
+  const ratio=window.devicePixelRatio||1,canvas=stage.querySelector("canvas"),context=canvas.getContext("2d");
+  canvas.width=Math.floor(viewport.width*ratio);canvas.height=Math.floor(viewport.height*ratio);
+  canvas.style.width=viewport.width+"px";canvas.style.height=viewport.height+"px";
+  const task=pdfPage.render({canvasContext:context,viewport,transform:ratio===1?null:[ratio,0,0,ratio,0,0]});
+  pdfTask=task;await task.promise;if(pdfTask===task)pdfTask=null;
+ }catch(error){
+  if(error&&error.name==="RenderingCancelledException")return;
+  if(renderId!==pdfRenderId)return;
+  pdfTask=null;status.textContent="Could not display this hierarchy: "+(error instanceof Error?error.message:String(error));
+ }
+}
+function drawImage(){
+ if(!image)return;
+ const scale=fitScale(image.naturalWidth,image.naturalHeight)*zoom;
+ image.style.width=Math.round(image.naturalWidth*scale)+"px";
+ image.style.height=Math.round(image.naturalHeight*scale)+"px";
+}
+function setZoom(next){
+ zoom=Math.max(.5,Math.min(4,next));updateZoomLabel();
+ if(kind==="pdf")drawPdf();else if(kind==="image")drawImage();
+}
+document.getElementById("zoom-out").addEventListener("click",()=>setZoom(zoom-.25));
+document.getElementById("zoom-in").addEventListener("click",()=>setZoom(zoom+.25));
+document.getElementById("zoom-fit").addEventListener("click",()=>setZoom(1));
+window.addEventListener("resize",()=>{if(kind==="pdf")drawPdf();else if(kind==="image")drawImage()});
+async function loadHierarchy(){
+ if(!business)throw new Error("No business was specified.");
+ if(!window.pdfjsLib)throw new Error("The hierarchy viewer could not be loaded.");
+ const response=await fetch("/api/hierarchy-images"),entries=await response.json();
+ if(!response.ok||entries.error)throw new Error(entries.error||"Could not load hierarchy details.");
+ const file=entries[business];
+ if(!file)throw new Error("No hierarchy file was found for this business.");
+ document.title=business+" hierarchy";
+ const url="/api/hierarchy-images/"+encodeURIComponent(business)+"?v="+encodeURIComponent(file.at||"");
+ if(file.type==="application/pdf"){
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc=workerUrl;
+  const documentPdf=await window.pdfjsLib.getDocument(url).promise;
+  pdfPage=await documentPdf.getPage(1);kind="pdf";
+  stage.innerHTML='<canvas aria-label="'+business.replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]))+' hierarchy"></canvas>';
+  await drawPdf();
+ }else if(/^image\/(png|jpeg|gif|webp)$/.test(file.type)){
+  image=new Image();image.alt=business+" hierarchy";image.onload=()=>{kind="image";drawImage();status.textContent=""};image.onerror=()=>{status.textContent="Could not load this hierarchy image."};image.src=url;stage.appendChild(image);
+  await image.decode();
+  kind="image";drawImage();
+ }else throw new Error("This hierarchy file type is not supported.");
+ status.textContent="";
+}
+loadHierarchy().catch(error=>{status.textContent=error instanceof Error?error.message:String(error)});
+</script>
+</body>
+</html>

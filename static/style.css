@@ -316,6 +316,7 @@ td button.sm{white-space:nowrap}
 .hy-viewer-stage canvas{display:block}
 .hy-img{display:block;max-width:none;height:auto}
 .hy-pdf-status{padding:.75rem}
+.hy-open-link{display:inline-block;margin:0 0 .5rem}
 
 /* ---- Dropdown option colours (hover / selected) */
 option{background:var(--card);color:var(--tx)}
