@@ -447,3 +447,73 @@ body{background:var(--bg)}
  .bg{grid-template-columns:1fr}
  .ph h1{font-size:1.625rem}
 }
+/* ---- Report dashboard (uses the app's theme variables, so light and dark both work) */
+.rp-grid{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:.875rem;align-items:start}
+@media (max-width:900px){.rp-grid{grid-template-columns:1fr}}
+.rp-ml{margin-bottom:.875rem}.rp-ml .sp{margin-bottom:.3rem;flex-wrap:wrap}
+.rp-bar{height:.5rem;border-radius:1rem;background:color-mix(in srgb,var(--mu) 20%,transparent);overflow:hidden;min-width:4rem;flex:1}
+.rp-bar>span{display:block;height:100%;border-radius:1rem;background:var(--gold2)}
+.rp-dual{display:grid;gap:.25rem}
+.rp-plan{background:color-mix(in srgb,var(--mu) 65%,transparent)!important}
+.rp-act{background:var(--gold2)!important}.rp-over{background:#c0572b!important}
+.rp-key{display:flex;gap:1rem;flex-wrap:wrap;font-size:.8125rem;color:var(--mu)}
+.rp-key i{display:inline-block;width:.7rem;height:.7rem;border-radius:50%;margin-right:.35rem;vertical-align:-1px}
+.rp-cell{display:flex;align-items:center;gap:.5rem;min-width:8rem}.rp-cell>span{font-size:.8125rem;white-space:nowrap}
+.rp-stack{display:flex;height:.75rem;border-radius:1rem;overflow:hidden;margin-bottom:.75rem;background:color-mix(in srgb,var(--mu) 20%,transparent)}
+.rp-stack>span{display:block;height:100%}
+.rp-st{display:flex;align-items:center;gap:.5rem;padding:.25rem 0}.rp-st b{margin-left:auto}
+.rp-dot{width:.7rem;height:.7rem;border-radius:50%}
+.rp-ok{background:#2f9e6e}.rp-prog{background:#2f78b5}.rp-bad{background:#c0572b}.rp-mu{background:#9aa6b2}
+.rp-pill{display:inline-block;padding:.1rem .6rem;border-radius:1rem;font-size:.75rem;font-weight:600;color:#fff;white-space:nowrap}
+.rp-li{padding:.4rem 0;border-top:1px solid var(--bd);flex-wrap:wrap}
+.rp-attn{border-left:.25rem solid #c0572b}
+
+.rp-charts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.875rem;margin-bottom:.0rem}
+@media (max-width:900px){.rp-charts{grid-template-columns:1fr}}
+.rp-svg{display:block;max-width:100%;color:var(--tx)}.rp-svg.rp-wide{width:100%;height:auto}
+.rp-svg .rp-sm{font-size:9px;fill:currentColor;opacity:.65}.rp-svg .rp-big{font:600 24px Manrope,system-ui,sans-serif;fill:currentColor}
+.rp-donut{display:flex;align-items:center;gap:1.25rem;flex-wrap:wrap}.rp-donut>svg{width:9rem;flex:none}.rp-donut>div{flex:1;min-width:9rem}
+
+.rp-title{margin:.25rem 0 .75rem}
+
+/* ---- Report animations: only under .rp-go (set when a view opens), so background refreshes never replay them */
+.rp .card{transition:transform .2s ease,box-shadow .2s ease}.rp .card:hover{transform:translateY(-2px)}
+@keyframes rpUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+@keyframes rpGrow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+@keyframes rpRise{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+@keyframes rpDraw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
+@keyframes rpFadeIn{from{opacity:0}to{opacity:var(--o,1)}}
+@keyframes rpPop{from{opacity:0;transform:scale(0)}to{opacity:1;transform:scale(1)}}
+@keyframes rpSpin{from{opacity:0;transform:rotate(-140deg) scale(.6)}to{opacity:1;transform:none}}
+.rp-go .rp-title,.rp-go .rp>.card,.rp-go .rp-grid>.card,.rp-go .rp-grid>div>.card,.rp-go .rp-charts>.card{animation:rpUp .6s cubic-bezier(.2,.7,.2,1) both}
+.rp-go .tg>.tl{animation:blurin .7s cubic-bezier(.2,.7,.2,1) .2s both}
+.rp-go .tg>.tl:nth-child(2){animation-delay:.27s}.rp-go .tg>.tl:nth-child(3){animation-delay:.34s}.rp-go .tg>.tl:nth-child(4){animation-delay:.41s}.rp-go .tg>.tl:nth-child(5){animation-delay:.48s}
+.rp-go .rp-charts>.card:nth-child(1){animation-delay:.25s}.rp-go .rp-charts>.card:nth-child(2){animation-delay:.33s}.rp-go .rp-charts>.card:nth-child(3){animation-delay:.41s}.rp-go .rp-charts>.card:nth-child(4){animation-delay:.49s}
+.rp-go .rp-grid>.card,.rp-go .rp-grid>div>.card:nth-child(1){animation-delay:.55s}.rp-go .rp-grid>div>.card:nth-child(2){animation-delay:.63s}
+.rp-go .rp>.card{animation-delay:.7s}
+.rp-go .rp-bar>span,.rp-go .rp-stack>span{transform-origin:left center;animation:rpGrow 1s cubic-bezier(.2,.7,.2,1) .7s both}
+.rp-go .rp-svg rect{transform-box:fill-box;transform-origin:center bottom;animation:rpRise .9s cubic-bezier(.2,.7,.2,1) .6s both}
+.rp-go .rp-donut>svg{animation:rpSpin 1.1s cubic-bezier(.2,.7,.2,1) .35s both}
+.rp-go .rp-line{stroke-dasharray:1;animation:rpDraw 1.3s ease .7s both}
+.rp-go .rp-area{--o:.15;animation:rpFadeIn 1s ease 1.3s both}
+.rp-go .rp-svg circle[r="3.5"],.rp-go .rp-svg circle[r="6"]{transform-box:fill-box;transform-origin:center;animation:rpPop .45s cubic-bezier(.3,1.6,.5,1) 1.1s both}
+@media (prefers-reduced-motion:reduce){.rp-go *,.rp-go *::before{animation:none!important}.rp .card{transition:none}}
+
+/* ---- Animation v2: blur-fade entrances, letter reveal, arc-drawn donut, staggered bars and rows (colors unchanged) */
+@keyframes rpUp{from{opacity:0;transform:translateY(22px) scale(.98);filter:blur(10px)}to{opacity:1;transform:none;filter:blur(0)}}
+@keyframes rpLetter{from{opacity:0;transform:translateY(.45em);filter:blur(6px)}to{opacity:1;transform:none;filter:blur(0)}}
+@keyframes rpRow{from{opacity:0;transform:translateX(-14px);filter:blur(4px)}to{opacity:1;transform:none;filter:blur(0)}}
+@keyframes rpArc{from{stroke-dasharray:0 400;opacity:.2}to{stroke-dasharray:var(--d);opacity:1}}
+@keyframes rpRise{from{transform:scaleY(0);opacity:.3}to{transform:scaleY(1);opacity:1}}
+.rp-go .rp-title{animation:none}
+.rp-go .rp-title span{display:inline-block;animation:rpLetter .55s cubic-bezier(.2,.7,.2,1) calc(var(--c)*38ms) both}
+.rp-go .rp-donut>svg{animation:none}
+.rp-go .rp-arc{animation:rpArc .7s cubic-bezier(.4,0,.2,1) calc(.45s + var(--k,0)*.22s) both}
+.rp-go .rp-svg rect{animation:rpRise 1s cubic-bezier(.16,1,.3,1) calc(.55s + var(--k,0)*.09s) both}
+.rp-go .sc table tr:not(:first-child){animation:rpRow .55s cubic-bezier(.2,.7,.2,1) calc(.6s + var(--i,0)*50ms) both}
+.rp-go .sc tr .rp-bar>span{animation-delay:calc(.75s + var(--i,0)*50ms)}
+.rp-go .rp-bar>span,.rp-go .rp-stack>span{animation-duration:1.1s;animation-timing-function:cubic-bezier(.16,1,.3,1)}
+.rp .card:hover{box-shadow:0 0 0 1px color-mix(in srgb,var(--gold2) 35%,transparent),0 14px 34px -16px color-mix(in srgb,var(--gold2) 55%,transparent)}
+.rp-svg rect,.rp-svg circle[r="3.5"],.rp-svg circle[r="6"]{transition:filter .2s,transform .2s}
+.rp-svg rect:hover,.rp-svg circle[r="3.5"]:hover,.rp-svg circle[r="6"]:hover{filter:brightness(1.18) drop-shadow(0 0 5px color-mix(in srgb,currentColor 40%,transparent))}
+@media (prefers-reduced-motion:reduce){.rp-go .rp-title span,.rp-go .sc tr{animation:none!important}}
