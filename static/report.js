@@ -89,7 +89,8 @@ function reportDashboard(bz){ // bz = business name for the business-wise view, 
  const avgProg=rptAvg(rows.map(r=>r.prog)),avgScore=rptAvg(rows.filter(r=>r.avgScore!=null).map(r=>r.avgScore));
  const avgPace=rptAvg(rows.filter(r=>r.pace!=null).map(r=>r.pace));
  const kpi=(l,v,s)=>`<div class="tl"><span class="mu">${l}</span><b>${v}</b><span class="mu">${s}</span></div>`;
- const kpis=`${kpi("Trainees",n,"enrolled")}${kpi("Completed",done,"all tasks completed")}${kpi("Avg progress",rptPct(avgProg),"of "+ST.length+" steps")}${kpi("Avg score",avgScore==null?"–":avgScore.toFixed(1)+" / "+MAXSC,"scored modules")}${kpi("Avg pace",rptPct(avgPace),"time vs plan")}${kpi("Stalled",stalled.length,RPT_STALL_DAYS+"+ days idle")}`;
+ const inProgress=rows.filter(r=>r.state==="In progress"||r.state==="Ready for next task").length;
+ const kpis=`${kpi("Total trainees",n,"enrolled")}${kpi("Completed",done,"all tasks completed")}${kpi("In progress",inProgress,"working through steps")}${kpi("Avg progress",rptPct(avgProg),"of "+ST.length+" steps")}${kpi("Avg score",avgScore==null?"–":avgScore.toFixed(1)+" / "+MAXSC,"scored modules")}${kpi("Avg pace",rptPct(avgPace),"time vs plan")}`;
  const reportTitle=`<h2 class="rp-title" aria-label="${esc(bz?bz+" report":"Overall report")}">${rptLetters(bz?bz+" report":"Overall report")}</h2>`;
 
  // Module progress: average completion and average score per module

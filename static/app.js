@@ -759,7 +759,6 @@ function list(){
  const report=showReport?reportDashboard(ov?"":S.view):"";
  return `${!ov&&!oneBiz()?'<button class="bk-btn" data-a="allbiz">← All businesses</button>':""}<div class="ph"><h1>${esc(title)}</h1><div class="mu">${desc}</div></div>
  <label class="fl vw"><span>View</span><select id="view">${(ov?[["overview","Overview"],["hierarchy","Hierarchy"]]:[["overview","Report"],["trainees","Trainees"],["hierarchy","Hierarchy"]]).map(([v,n])=>`<option value="${v}"${S.bv===v?" selected":""}>${n}</option>`).join("")}</select></label>
- ${hideSummary&&report?"":`<div class="tg">${st("Total trainees",k.n,"enrolled")}${st("In progress",k.ip,"working through steps")}${st("Completed",k.dn,"all tasks completed")}</div>`}
  ${report}
  <div id="tl">${listBody()}</div>`;
 }
